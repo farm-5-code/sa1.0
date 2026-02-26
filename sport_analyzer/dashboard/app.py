@@ -752,7 +752,7 @@ def page_opportunities(analyzer, sports):
 
     autoref = st.checkbox("Автообновление", value=False)
 
-if autoref:
+    if autoref:
     # Streamlit doesn't have st.autorefresh in v1.33.0.
     # Use optional dependency if installed; otherwise just show a hint.
     try:
