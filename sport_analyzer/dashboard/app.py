@@ -862,3 +862,84 @@ def page_auto_scanner():
     cfg, sports, api, analyzer = _services()
     # используем уже кешированную реализацию
     page_opportunities(analyzer, sports)
+# ============================================================
+# STEP 6.2 — DEMO FIXTURES (work without FOOTBALL_DATA_KEY)
+# ============================================================
+
+def _demo_matches(days_ahead: int = 2):
+    # Мини-набор для проверки Auto Scanner без ключей
+    now = datetime.utcnow()
+    base_dt = now.replace(minute=0, second=0, microsecond=0)
+
+    demo = [
+        {
+            "utcDate": (base_dt + timedelta(hours=6)).isoformat(),
+            "date": (base_dt + timedelta(hours=6)).isoformat(),
+            "competition": "DEMO • EPL",
+            "home_team": "Arsenal",
+            "away_team": "Chelsea",
+            "home_team_id": 0,
+            "away_team_id": 0,
+        },
+        {
+            "utcDate": (base_dt + timedelta(hours=10)).isoformat(),
+            "date": (base_dt + timedelta(hours=10)).isoformat(),
+            "competition": "DEMO • LaLiga",
+            "home_team": "Barcelona",
+            "away_team": "Real Madrid",
+            "home_team_id": 0,
+            "away_team_id": 0,
+        },
+        {
+            "utcDate": (base_dt + timedelta(hours=14)).isoformat(),
+            "date": (base_dt + timedelta(hours=14)).isoformat(),
+            "competition": "DEMO • Serie A",
+            "home_team": "Inter",
+            "away_team": "Juventus",
+            "home_team_id": 0,
+            "away_team_id": 0,
+        },
+        {
+            "utcDate": (base_dt + timedelta(hours=18)).isoformat(),
+            "date": (base_dt + timedelta(hours=18)).isoformat(),
+            "competition": "DEMO • Bundesliga",
+            "home_team": "Bayern Munich",
+            "away_team": "Borussia Dortmund",
+            "home_team_id": 0,
+            "away_team_id": 0,
+        },
+    ]
+
+    # Чуть “масштабируем” по days_ahead, чтобы не было всегда одно и то же
+    if int(days_ahead) >= 3:
+        demo.append(
+            {
+                "utcDate": (base_dt + timedelta(hours=30)).isoformat(),
+                "date": (base_dt + timedelta(hours=30)).isoformat(),
+                "competition": "DEMO • Ligue 1",
+                "home_team": "PSG",
+                "away_team": "Marseille",
+                "home_team_id": 0,
+                "away_team_id": 0,
+            }
+        )
+    return demo
+
+
+@st.cache_data(ttl=30 * 60)
+def _cached_matches(days_ahead: int):
+    """
+    Override: если ключей нет / матчей нет — даём demo набор.
+    """
+    cfg, sports, api, analyzer = _services()
+
+    try:
+        matches = sports.get_matches(days_ahead=int(days_ahead)) or []
+    except Exception:
+        matches = []
+
+    if matches:
+        return matches
+
+    # fallback to demo
+    return _demo_matches(days_ahead=int(days_ahead))
