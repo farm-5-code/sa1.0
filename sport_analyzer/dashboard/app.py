@@ -50,7 +50,7 @@ from sport_analyzer.utils.team_normalizer import normalize_team_name
 def _plot_odds_history(df_hist: pd.DataFrame, market: str, selection: str):
     """Line chart for best/avg odds over time."""
     if df_hist.empty:
-         st.info("История пустая.") info("История пустая.")
+         st.info("История пустая.")
         return
     d = df_hist[(df_hist["market"] == market) & (df_hist["selection"] == selection)].copy()
     if d.empty:
