@@ -790,66 +790,68 @@ def page_opportunities(analyzer, sports):
     total = len(df)
 
     for i, r in enumerate(df.to_dict("records"), start=1):
-        prog.progress(i / max(1, total))
+    prog.progress(i / max(1, total))
 
-        home = str(r.get("home_team") or r.get("homeTeam") or "").strip()
-        away = str(r.get("away_team") or r.get("awayTeam") or "").strip()
-        if not home or not away:
-            continue
+    home = str(r.get("home_team") or r.get("homeTeam") or "").strip()
+    away = str(r.get("away_team") or r.get("awayTeam") or "").strip()
 
-        match_dt = str(r.get("utcDate") or r.get("date") or "")
-        if not match_dt:
-            # если нет даты — ставим «сейчас», но лучше когда football-data вернёт дату
-            match_dt = datetime.utcnow().isoformat()
+    if not home or not away:
+        continue
 
-        h_id = r.get("home_team_id") or r.get("homeTeamId") or 0
-        a_id = r.get("away_team_id") or r.get("awayTeamId") or 0
-        h_id = int(h_id) if int(h_id) else None
-        a_id = int(a_id) if int(a_id) else None
+    match_dt = str(r.get("utcDate") or r.get("date") or "")
+    if not match_dt:
+        match_dt = datetime.utcnow().isoformat()
 
-                try:
-            res = _cached_analyze(home, away, match_dt, h_id, a_id)
-        except Exception:
-            continue
+    h_id = r.get("home_team_id") or r.get("homeTeamId") or 0
+    a_id = r.get("away_team_id") or r.get("awayTeamId") or 0
 
-        probs = res.get("final_probs") or {}
+    h_id = int(h_id) if str(h_id).isdigit() else None
+    a_id = int(a_id) if str(a_id).isdigit() else None
 
-        ph = _prob_safe(probs.get("home_win", 0))
-        pdw = _prob_safe(probs.get("draw", 0))
-        pa = _prob_safe(probs.get("away_win", 0))
+    try:
+        res = _cached_analyze(home, away, match_dt, h_id, a_id)
+    except Exception:
+        continue
 
-        pick = "Home"
-        pmax = ph
+    probs = res.get("final_probs") or {}
 
-        if pdw > pmax:
-            pick, pmax = "Draw", pdw
-        if pa > pmax:
-            pick, pmax = "Away", pa
+    ph = _prob_safe(probs.get("home_win", 0))
+    pdw = _prob_safe(probs.get("draw", 0))
+    pa = _prob_safe(probs.get("away_win", 0))
 
-        conf = float(res.get("confidence", pmax * 100) or (pmax * 100))
+    pick = "Home"
+    pmax = ph
 
-        probs_sorted = sorted([ph, pdw, pa], reverse=True)
-        p2 = probs_sorted[1] if len(probs_sorted) > 1 else 0.0
-        edge_pct = (pmax - p2) * 100.0
+    if pdw > pmax:
+        pick, pmax = "Draw", pdw
 
-        score = 0.65 * conf + 0.35 * edge_pct
+    if pa > pmax:
+        pick, pmax = "Away", pa
 
-        rows.append(
-            {
-                "datetime": match_dt,
-                "league": r.get("competition") or r.get("league") or "",
-                "home": home,
-                "away": away,
-                "pick": pick,
-                "score": round(score, 2),
-                "confidence_%": round(conf, 1),
-                "edge_%": round(edge_pct, 1),
-                "p_pick": round(pmax, 4),
-                "p_home": round(ph, 4),
-                "p_draw": round(pdw, 4),
-                "p_away": round(pa, 4),
-            }
-        )
+    conf = float(res.get("confidence", pmax * 100) or (pmax * 100))
+
+    probs_sorted = sorted([ph, pdw, pa], reverse=True)
+    p2 = probs_sorted[1] if len(probs_sorted) > 1 else 0.0
+    edge_pct = (pmax - p2) * 100.0
+
+    score = 0.65 * conf + 0.35 * edge_pct
+
+    rows.append(
+        {
+            "datetime": match_dt,
+            "league": r.get("competition") or r.get("league") or "",
+            "home": home,
+            "away": away,
+            "pick": pick,
+            "score": round(score, 2),
+            "confidence_%": round(conf, 1),
+            "edge_%": round(edge_pct, 1),
+            "p_pick": round(pmax, 4),
+            "p_home": round(ph, 4),
+            "p_draw": round(pdw, 4),
+            "p_away": round(pa, 4),
+        }
+    )
     prog.empty()
 
     out = pd.DataFrame(rows)
