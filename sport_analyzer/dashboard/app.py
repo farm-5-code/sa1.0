@@ -207,9 +207,11 @@ def main():
     analyzer = MatchAnalyzer(cfg, sports=sports, weather=weather, news=news)
 
     st.sidebar.title("🏆 Sport Analyzer")
-    page = st.sidebar.radio("Раздел", [["Анализ", "Сигналы", "Расписание", "История", "Диагностика"]], index=0)
+    page = st.sidebar.radio("Раздел", ["Анализ", "Opportunities", "Сигналы", "Расписание", "История", "Диагностика"], index=0)
 
     if page == "Анализ":
+    elif page == "Opportunities":
+        page_opportunities(analyzer, sports)
         page_analyze(analyzer, sports, cfg, api)
     elif page == "Сигналы":
         page_signals(api)
@@ -389,3 +391,112 @@ def page_signals(api: ApiSportsCollector):
         use_container_width=True,
         hide_index=True,
     )
+# ============================================================
+# STEP 4 — OPPORTUNITIES (48h) without API-Sports
+# ============================================================
+
+def _safe_prob(x: Any) -> float:
+    try:
+        v = float(x)
+    except Exception:
+        return 0.0
+    if v != v:  # NaN
+        return 0.0
+    return max(0.0, min(1.0, v))
+
+
+def _pick_from_probs(home: float, draw: float, away: float):
+    m = max(home, draw, away)
+    if m == home:
+        return "Home", m
+    if m == draw:
+        return "Draw", m
+    return "Away", m
+
+
+def page_opportunities(analyzer: MatchAnalyzer, sports: SportsCollector):
+    st.title("💎 Opportunities (48h)")
+    st.caption("Список ближайших матчей и сильнейшие прогнозы по модели (без odds / без API-Sports).")
+
+    days = st.slider("Дней вперёд", 1, 7, 2)
+    top_n = st.slider("Показать топ", 5, 50, 15)
+
+    with st.spinner("Загружаю матчи…"):
+        matches = sports.get_matches(days_ahead=int(days)) or []
+
+    if not matches:
+        st.warning("Матчи не найдены. Проверь FOOTBALL_DATA_KEY.")
+        return
+
+    df = pd.DataFrame(matches)
+    if df.empty:
+        st.warning("Пустой список матчей.")
+        return
+
+    # Best effort columns
+    # expecting: home_team, away_team, home_team_id, away_team_id, date/utcDate
+    rows = []
+    prog = st.progress(0.0)
+    total = len(df)
+
+    for i, r in enumerate(df.to_dict("records"), start=1):
+        prog.progress(i / max(1, total))
+
+        home_raw = str(r.get("home_team", "") or "")
+        away_raw = str(r.get("away_team", "") or "")
+        if not home_raw or not away_raw:
+            continue
+
+        home = normalize_team_name(home_raw)
+        away = normalize_team_name(away_raw)
+
+        match_dt = r.get("utcDate") or r.get("date") or ""
+        match_dt = str(match_dt)
+
+        h_id = r.get("home_team_id") or r.get("homeTeamId") or 0
+        a_id = r.get("away_team_id") or r.get("awayTeamId") or 0
+
+        try:
+            res = analyzer.analyze_match(
+                home_team=home,
+                away_team=away,
+                match_datetime=match_dt if match_dt else datetime.utcnow().isoformat(),
+                home_team_id=int(h_id) if int(h_id) else None,
+                away_team_id=int(a_id) if int(a_id) else None,
+            )
+        except Exception:
+            # не валим весь список из-за одного матча
+            continue
+
+        probs = res.get("final_probs") or {}
+        ph = _safe_prob(probs.get("home_win", 0))
+        pdw = _safe_prob(probs.get("draw", 0))
+        pa = _safe_prob(probs.get("away_win", 0))
+
+        pick, pmax = _pick_from_probs(ph, pdw, pa)
+        conf = float(res.get("confidence", pmax * 100) or (pmax * 100))
+
+        rows.append({
+            "datetime": match_dt,
+            "league": r.get("competition") or r.get("league") or "",
+            "home": home_raw,
+            "away": away_raw,
+            "pick": pick,
+            "p_pick": round(pmax, 4),
+            "confidence_%": round(conf, 1),
+            "p_home": round(ph, 4),
+            "p_draw": round(pdw, 4),
+            "p_away": round(pa, 4),
+        })
+
+    prog.empty()
+
+    out = pd.DataFrame(rows)
+    if out.empty:
+        st.info("Не удалось построить прогнозы по матчам (возможно, не хватает данных/ключа).")
+        return
+
+    out = out.sort_values(["confidence_%", "p_pick"], ascending=False).head(int(top_n))
+    st.dataframe(out, use_container_width=True, hide_index=True)
+
+    st.caption("Подсказка: кликай по строкам/фильтруй таблицу — это живой рейтинг силы прогнозов.")
