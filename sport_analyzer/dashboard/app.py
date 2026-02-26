@@ -627,9 +627,11 @@ def main():
     st.sidebar.title("🏆 Sport Analyzer")
     page = st.sidebar.radio(
         "Раздел",
-        ["Анализ", "Opportunities", "Insights", "Сигналы", "Расписание", "История", "Диагностика"],
+        ["Анализ", "Opportunities", "Insights", "Сигналы",
+        "Расписание", "История", "Диагностика"],
         index=0,
-    )
+    key="main_navigation_radio",
+)
 
     if page == "Анализ":
         page_analyze(analyzer, sports, cfg, api)
