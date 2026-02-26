@@ -640,7 +640,9 @@ def main():
         index=0,
         key="main_navigation_radio",
     )
-
+# --- navigation override (one-click analyze) ---
+if st.session_state.pop("goto_analysis", False):
+    page = "🏆 Анализ"
     if page == "🏆 Анализ":
         page_analyze(analyzer, sports, cfg, api)
 
