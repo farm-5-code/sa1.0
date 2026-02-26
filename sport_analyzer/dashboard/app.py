@@ -210,9 +210,9 @@ def main():
     page = st.sidebar.radio("Раздел", ["Анализ", "Opportunities", "Сигналы", "Расписание", "История", "Диагностика"], index=0)
 
     if page == "Анализ":
+        page_analyze(analyzer, sports, cfg, api)
     elif page == "Opportunities":
         page_opportunities(analyzer, sports)
-        page_analyze(analyzer, sports, cfg, api)
     elif page == "Сигналы":
         page_signals(api)
     elif page == "Расписание":
