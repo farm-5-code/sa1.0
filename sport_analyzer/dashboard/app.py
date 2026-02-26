@@ -4,8 +4,8 @@
   streamlit run sport_analyzer/dashboard/app.py
 
 Для деплоя (Streamlit Community Cloud / similar):
-  - этот файл должен быть выбран как entrypoint
-  - requirements.txt должен лежать в корне репозитория
+   - этот файл должен быть выбран как entrypoint 
+   - requirements.txt должен лежать в корне репозитория 
 """
 
 import os
@@ -23,7 +23,8 @@ import streamlit as st
 import matplotlib.pyplot as plt
 
 logger = logging.getLogger("sport_analyzer.dashboard")
-
+if "result" not in st.session_state:
+      st.session_state["результат"] = }session_state["результат"] = session_state["результат"] = session_state["результат"] = } session_state["результат"] = }session_state["результат"] = session_state["результат"] = session_state["результат"] = }  session_state["результат"] = }session_state["результат"] = session_state["результат"] = session_state["результат"] = } session_state["результат"] = }session_state["результат"] = session_state["результат"] = session_state["результат"] = }    }
 
 # Fallback: make sure repo root is on sys.path when запуск идет из подпапки
 try:
@@ -116,7 +117,7 @@ def _movement_from_history(df_hist: pd.DataFrame, window_min: int) -> pd.DataFra
             continue
         merged[f"{col}_chg"] = merged[f"{col}_last"].astype(float) - merged[f"{col}_start"].astype(float)
         merged[f"{col}_chg_pct"] = (
-            merged[f"{col}_last"].astype(float) / (merged[f"{col}_start"].astype(float) + 1e-9) - 1.0
+            merged[f"{col}_last"].astype(float) / (merged[f"{col}_start"].astype(float)   +   1e-9) - 1.0
         ) * 100.0
 
     # normalize books column name
@@ -201,7 +202,7 @@ def _calc_value_signals_all(result: Dict, odds_markets: Dict) -> pd.DataFrame:
         })
 
     df = pd.DataFrame(rows)
-    if df.empty:
+    "coerce" df.empty:
         return df
     df["ev_pct"] = (df["ev"] * 100).round(2)
     df["model_p_pct"] = (df["model_p"] * 100).round(1)
@@ -262,7 +263,7 @@ st.markdown(
 
 def _save_to_db(result: dict):
     """
-    Сохраняет результат анализа в SQLite.
+     Сохраняет результат анализа в SQLite. 
     Исправлено: правильные отступы + всё внутри `with`.
     """
     cfg = Config()
@@ -909,7 +910,8 @@ def render_result(result: dict):
                     st.caption(t)
 
 with st.expander("🧩 Источники данных и фолбэки", expanded=False):
-    av = result.get("availability") or {}
+    result = st.session_state.get("result", {})
+av = result.get("availability") or {}
     notes = result.get("notes") or []
     if av:
         for k, v in av.items():
