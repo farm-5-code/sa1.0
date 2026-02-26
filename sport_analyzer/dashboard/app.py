@@ -206,7 +206,6 @@ def main():
     analyzer = MatchAnalyzer(cfg, sports=sports, weather=weather, news=news)
 
     st.sidebar.title("🏆 Sport Analyzer")
-    page = st.sidebar.radio("Раздел", ["Анализ","Opportunities","Insights","Сигналы","Расписание","История","Диагностика"], index=0)
 
     if page == "Анализ":
         page_analyze(analyzer, sports, cfg, api)
