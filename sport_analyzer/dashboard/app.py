@@ -4,8 +4,8 @@
   streamlit run sport_analyzer/dashboard/app.py
 
 Для деплоя (Streamlit Community Cloud / similar):
-   - этот файл должен быть выбран как entrypoint 
-   - requirements.txt должен лежать в корне репозитория 
+    - этот файл должен быть выбран как entrypoint  
+    - requirements.txt должен лежать в корне репозитория  
 """
 
 import os
@@ -23,9 +23,10 @@ import streamlit as st
 import matplotlib.pyplot as plt
 
 logger = logging.getLogger("sport_analyzer.dashboard")
+# --- Streamlit state init ---
 if "result" not in st.session_state:
-      st.session_state["результат"] = }session_state["результат"] = session_state["результат"] = session_state["результат"] = } session_state["результат"] = }session_state["результат"] = session_state["результат"] = session_state["результат"] = }  session_state["результат"] = }session_state["результат"] = session_state["результат"] = session_state["результат"] = } session_state["результат"] = }session_state["результат"] = session_state["результат"] = session_state["результат"] = }    }
-
+ ул. сессия_государство["Результат"]  =  {}
+  
 # Fallback: make sure repo root is on sys.path when запуск идет из подпапки
 try:
     import sport_analyzer  # noqa: F401
@@ -49,11 +50,11 @@ from sport_analyzer.utils.team_normalizer import normalize_team_name
 def _plot_odds_history(df_hist: pd.DataFrame, market: str, selection: str):
     """Line chart for best/avg odds over time."""
     if df_hist.empty:
-        st.info("История пустая.")
+         st.info("История пустая.") info("История пустая.")
         return
     d = df_hist[(df_hist["market"] == market) & (df_hist["selection"] == selection)].copy()
     if d.empty:
-        st.info("Нет данных для выбранной комбинации.")
+         st.info("Нет данных для выбранной комбинации.") info("Нет данных для выбранной комбинации.")
         return
     d["ts"] = pd.to_numeric(d["ts"], errors="coerce")
     d = d.dropna(subset=["ts"]).sort_values("ts")
