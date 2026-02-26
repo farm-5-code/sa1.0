@@ -821,7 +821,16 @@ def page_opportunities(analyzer, sports):
         if pa > pmax:
             pick, pmax = "Away", pa
 
+        # confidence (%)
         conf = float(res.get("confidence", pmax * 100) or (pmax * 100))
+
+        # edge — насколько лучший исход сильнее второго
+        probs_sorted = sorted([ph, pdw, pa], reverse=True)
+        p2 = probs_sorted[1] if len(probs_sorted) > 1 else 0.0
+        edge_pct = (pmax - p2) * 100.0
+
+        # общий AI score
+        score = 0.65 * conf + 0.35 * edge_pct
 
         rows.append(
             {
@@ -830,14 +839,15 @@ def page_opportunities(analyzer, sports):
                 "home": home,
                 "away": away,
                 "pick": pick,
+                "score": round(score, 2),
                 "confidence_%": round(conf, 1),
+                "edge_%": round(edge_pct, 1),
                 "p_pick": round(pmax, 4),
                 "p_home": round(ph, 4),
                 "p_draw": round(pdw, 4),
                 "p_away": round(pa, 4),
             }
-        )
-
+)
     prog.empty()
 
     out = pd.DataFrame(rows)
@@ -845,8 +855,7 @@ def page_opportunities(analyzer, sports):
         st.warning("Скан не дал результатов (возможно, не хватает данных/ключей).")
         return
 
-    out = out.sort_values(["confidence_%", "p_pick"], ascending=False)
-
+    out = out.sort_values(["score", "confidence_%", "p_pick"], ascending=False)
     # сохраним в session_state, чтобы при переключении вкладок не считать заново
     st.session_state["auto_scan_rows"] = out.to_dict("records")
     st.session_state["auto_scan_meta"] = f"{datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')} | days={days} | matches={len(out)}"
