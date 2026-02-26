@@ -626,8 +626,8 @@ def main():
 
     st.sidebar.title("🏆 Sport Analyzer")
     page = st.sidebar.radio(
-    "Раздел",
-    [
+        "Раздел",
+        [
         "🏆 Анализ",
         "🔥 Opportunities",
         "🧠 Insights",
@@ -635,9 +635,9 @@ def main():
         "📅 Расписание",
         "📚 История",
         "🧪 Диагностика",
-    ],
-    index=0,
-    key="main_navigation_radio",
+        ],
+        index=0,
+        key="main_navigation_radio",
     )
 
     if page == "Анализ":
