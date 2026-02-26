@@ -826,9 +826,9 @@ def page_opportunities(analyzer, sports):
 
         # edge — насколько лучший исход сильнее второго
         probs_sorted = sorted([ph, pdw, pa], reverse=True)
+        p1 = probs_sorted[0] if probs_sorted else 0.0
         p2 = probs_sorted[1] if len(probs_sorted) > 1 else 0.0
-        edge_pct = (pmax - p2) * 100.0
-
+        edge_pct = (p1 - p2) * 100.0
         # общий AI score
         score = 0.65 * conf + 0.35 * edge_pct
 
