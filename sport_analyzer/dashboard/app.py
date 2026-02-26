@@ -630,7 +630,7 @@ def main():
         ["Анализ", "Opportunities", "Insights", "Сигналы",
         "Расписание", "История", "Диагностика"],
         index=0,
-    key="main_navigation_radio",
+        key="main_navigation_radio",
 )
 
     if page == "Анализ":
