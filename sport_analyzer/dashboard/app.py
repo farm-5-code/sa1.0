@@ -207,10 +207,12 @@ def main():
     analyzer = MatchAnalyzer(cfg, sports=sports, weather=weather, news=news)
 
     st.sidebar.title("🏆 Sport Analyzer")
-    page = st.sidebar.radio("Раздел", ["Анализ", "Opportunities", "Сигналы", "Расписание", "История", "Диагностика"], index=0)
+    page = st.sidebar.radio("Раздел", ["Анализ","Opportunities","Insights","Сигналы","Расписание","История","Диагностика"], index=0)
 
     if page == "Анализ":
         page_analyze(analyzer, sports, cfg, api)
+    elif page == "Insights":
+        page_insights()
     elif page == "Opportunities":
         page_opportunities(analyzer, sports)
     elif page == "Сигналы":
@@ -500,3 +502,58 @@ def page_opportunities(analyzer: MatchAnalyzer, sports: SportsCollector):
     st.dataframe(out, use_container_width=True, hide_index=True)
 
     st.caption("Подсказка: кликай по строкам/фильтруй таблицу — это живой рейтинг силы прогнозов.")
+    # ============================================================
+# STEP 5 — MODEL INSIGHTS
+# ============================================================
+
+import matplotlib.pyplot as plt
+
+
+def page_insights():
+    st.title("🧠 Model Insights")
+
+    result = st.session_state.get("result")
+
+    if not result:
+        st.info("Сначала выполни анализ матча.")
+        return
+
+    probs = result.get("final_probs") or {}
+
+    home = float(probs.get("home_win", 0))
+    draw = float(probs.get("draw", 0))
+    away = float(probs.get("away_win", 0))
+
+    st.subheader("Вероятности исходов")
+
+    fig = plt.figure()
+    plt.bar(["Home", "Draw", "Away"], [home, draw, away])
+    plt.ylabel("Probability")
+
+    st.pyplot(fig, clear_figure=True)
+
+    st.subheader("Уверенность модели")
+
+    conf = float(result.get("confidence", 0))
+    st.metric("Confidence", f"{conf:.1f}%")
+
+    if conf > 60:
+        st.success("Высокая уверенность модели")
+    elif conf > 48:
+        st.warning("Средняя уверенность")
+    else:
+        st.error("Низкая уверенность")
+
+    recs = result.get("recommendations") or []
+
+    if recs:
+        st.subheader("Рекомендации")
+        for r in recs:
+            st.write("•", r)
+
+    # если анализатор отдаёт факторы — покажем
+    factors = result.get("factors") or result.get("model_factors")
+
+    if isinstance(factors, dict) and factors:
+        st.subheader("Факторы модели")
+        st.json(factors)
