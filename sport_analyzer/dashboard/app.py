@@ -962,9 +962,13 @@ def open_analysis(home, away, match_date=None):
 # ============================================================
 
 def _nav_to_analysis(home: str, away: str, dt: str | None = None):
-    # сохраним префилл и попросим main открыть Анализ
+    # запоминаем что подставить на анализе
     st.session_state["prefill_match"] = {"home": home, "away": away, "dt": dt}
-    st.session_state["force_page"] = "🏆 Анализ"
+
+    # ✅ переключаем sidebar.radio (по его key!)
+    st.session_state["main_navigation_radio"] = "🏆 Анализ"
+
+    # перерисовка страницы
     st.rerun()
 
 
