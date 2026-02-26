@@ -1,9 +1,9 @@
 """
-Sport Analyzer — Dashboard rebuild (STEP 2)
+Sport Analyzer — Streamlit Dashboard (incremental build)
 
-Добавлено:
-✅ Расписание
-✅ История анализов
+Правило сборки:
+- Ты вставляешь следующий блок кода ВСЕГДА в самый конец файла.
+- Мы не правим середину, не ищем/заменяем.
 """
 
 from __future__ import annotations
@@ -27,156 +27,172 @@ from sport_analyzer.database.migrations import run_migrations
 from sport_analyzer.utils.team_normalizer import normalize_team_name
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("dashboard")
+logger = logging.getLogger("sport_analyzer.dashboard")
 
 
-# ---------------- STATE ----------------
-
+# ---------- STATE ----------
 def init_state():
     st.session_state.setdefault("result", {})
     st.session_state.setdefault("last_error", "")
     st.session_state.setdefault("last_run_at", "")
 
 
-# ---------------- DB ----------------
-
+# ---------- DB ----------
 def ensure_db(path: str):
-    run_migrations(path)
-    with sqlite3.connect(path) as c:
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS analyses(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            created_at TEXT DEFAULT (datetime('now')),
-            match TEXT,
-            datetime TEXT,
-            prediction TEXT,
-            confidence REAL,
-            analysis_json TEXT
-        )
-        """)
-        c.commit()
+    # project migrations (safe)
+    try:
+        run_migrations(path)
+    except Exception as e:
+        logger.exception("run_migrations failed: %s", e)
+
+    # minimal table for history
+    try:
+        with sqlite3.connect(path, timeout=10) as c:
+            c.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analyses(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT DEFAULT (datetime('now')),
+                    match TEXT,
+                    datetime TEXT,
+                    prediction TEXT,
+                    confidence REAL,
+                    analysis_json TEXT
+                )
+                """
+            )
+            c.commit()
+    except Exception as e:
+        logger.exception("ensure_db failed: %s", e)
 
 
 def save_analysis(path: str, result: Dict[str, Any]):
-    with sqlite3.connect(path) as c:
-        c.execute("""
-        INSERT INTO analyses(match,datetime,prediction,confidence,analysis_json)
-        VALUES(?,?,?,?,?)
-        """, (
-            f"{result.get('home_team')} vs {result.get('away_team')}",
-            str(result.get("datetime","")),
-            str(result.get("prediction","")),
-            float(result.get("confidence",0)),
-            json.dumps(result, ensure_ascii=False)
-        ))
-        c.commit()
+    try:
+        match = result.get("match") or f"{result.get('home_team','')} vs {result.get('away_team','')}"
+        dt = str(result.get("datetime", ""))
+        pred = str(result.get("best_pick", result.get("prediction", "")))
+        conf = float(result.get("confidence", 0.0) or 0.0)
+        raw = json.dumps(result, ensure_ascii=False)
+
+        with sqlite3.connect(path, timeout=10) as c:
+            c.execute(
+                """
+                INSERT INTO analyses(match, datetime, prediction, confidence, analysis_json)
+                VALUES(?,?,?,?,?)
+                """,
+                (match, dt, pred, conf, raw),
+            )
+            c.commit()
+    except Exception as e:
+        logger.exception("save_analysis failed: %s", e)
 
 
 def load_analyses(path: str, limit: int = 300) -> pd.DataFrame:
     try:
-        with sqlite3.connect(path) as c:
+        with sqlite3.connect(path, timeout=10) as c:
             return pd.read_sql_query(
-                f"SELECT * FROM analyses ORDER BY id DESC LIMIT {limit}",
-                c
+                f"""
+                SELECT id, created_at, match, datetime, prediction, confidence
+                FROM analyses
+                ORDER BY id DESC
+                LIMIT {int(limit)}
+                """,
+                c,
             )
-    except Exception:
+    except Exception as e:
+        logger.exception("load_analyses failed: %s", e)
         return pd.DataFrame()
 
 
-# ---------------- UI ----------------
-
+# ---------- UI helpers ----------
 def render_result(result: Dict[str, Any]):
     if not result:
-        st.info("Запусти анализ.")
+        st.info("Пока нет результата. Запусти анализ.")
         return
 
-    st.markdown(
-        f"## {result.get('home_team')} vs {result.get('away_team')}"
-    )
+    home = str(result.get("home_team", "Home"))
+    away = str(result.get("away_team", "Away"))
+    conf = float(result.get("confidence", 0.0) or 0.0)
 
-    conf = float(result.get("confidence", 0))
-    st.metric("Confidence", f"{conf:.1f}%")
+    st.markdown(f"## 🧾 Результат: **{home} vs {away}**")
+    st.metric("Уверенность", f"{conf:.1f}%")
 
     probs = result.get("final_probs") or {}
+    if isinstance(probs, dict) and probs:
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.write("🏠 Home")
+            st.progress(float(probs.get("home_win", 0.0) or 0.0))
+        with c2:
+            st.write("🤝 Draw")
+            st.progress(float(probs.get("draw", 0.0) or 0.0))
+        with c3:
+            st.write("✈️ Away")
+            st.progress(float(probs.get("away_win", 0.0) or 0.0))
 
-    c1, c2, c3 = st.columns(3)
-    c1.progress(float(probs.get("home_win", 0)))
-    c2.progress(float(probs.get("draw", 0)))
-    c3.progress(float(probs.get("away_win", 0)))
+    recs = result.get("recommendations") or []
+    if recs:
+        with st.expander("💡 Рекомендации", expanded=True):
+            for r in recs:
+                st.write(f"• {r}")
 
-    with st.expander("RAW"):
+    with st.expander("🔎 Raw (debug)", expanded=False):
         st.json(result)
 
 
-# ---------------- PAGES ----------------
-
-def page_analyze(analyzer: MatchAnalyzer, sports: SportsCollector, cfg: Config):
-    st.title("🏆 Анализ")
+# ---------- PAGES (stubs for now) ----------
+def page_analyze(analyzer: MatchAnalyzer, sports: SportsCollector, cfg: Config, api: ApiSportsCollector):
+    st.title("🏆 Анализ (скелет)")
+    st.caption("Дальше добавим выбор матча, odds, value и т.д.")
 
     home = st.text_input("Home", "Arsenal")
     away = st.text_input("Away", "Chelsea")
+    match_date = st.date_input("Дата", value=date.today())
+    match_time = st.time_input("Время (UTC)", value=datetime.utcnow().time())
 
-    run = st.button("Анализировать", type="primary")
-
-    if run:
+    if st.button("🚀 Анализировать", type="primary"):
+        st.session_state["last_error"] = ""
         try:
             result = analyzer.analyze_match(
                 home_team=normalize_team_name(home),
                 away_team=normalize_team_name(away),
-                match_datetime=datetime.utcnow().isoformat(),
+                match_datetime=f"{match_date}T{match_time}:00",
             )
-
-            st.session_state.result = result
+            st.session_state["result"] = result
+            st.session_state["last_run_at"] = datetime.utcnow().isoformat()
             save_analysis(cfg.DB_PATH, result)
-
         except Exception as e:
-            st.session_state.last_error = str(e)
+            st.session_state["last_error"] = str(e)
+            logger.exception("analyze failed: %s", e)
 
-    render_result(st.session_state.result)
+    if st.session_state.get("last_error"):
+        st.error(st.session_state["last_error"])
+
+    render_result(st.session_state.get("result") or {})
 
 
 def page_schedule(sports: SportsCollector):
-    st.title("📅 Расписание")
-
-    days = st.slider("Days ahead", 1, 14, 7)
-
-    matches = sports.get_matches(days_ahead=days) or []
-
-    if not matches:
-        st.warning("Нет матчей")
-        return
-
-    df = pd.DataFrame(matches)
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.title("📅 Расписание (скоро)")
+    st.info("Добавим в следующей части.")
 
 
 def page_history(cfg: Config):
-    st.title("🕘 История")
-
-    df = load_analyses(cfg.DB_PATH)
-
-    if df.empty:
-        st.info("История пустая")
-        return
-
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.title("🕘 История (скоро)")
+    st.info("Добавим в следующей части.")
 
 
 def page_diagnostics(cfg: Config, api: ApiSportsCollector):
-    st.title("🧪 Диагностика")
+    st.title("🧪 Диагностика (скелет)")
+    st.write(f"DB_PATH: `{cfg.DB_PATH}`")
+    st.write("API-Sports configured:", "✅" if api.is_configured() else "❌")
+    st.write("Last run:", st.session_state.get("last_run_at") or "—")
+    if st.session_state.get("last_error"):
+        st.code(st.session_state["last_error"])
 
-    st.write("DB:", cfg.DB_PATH)
-    st.write("API-Sports:", "✅" if api.is_configured() else "❌")
 
-    if st.session_state.last_error:
-        st.code(st.session_state.last_error)
-
-
-# ---------------- MAIN ----------------
-
+# ---------- MAIN ----------
 def main():
-    st.set_page_config(page_title="Sport Analyzer", layout="wide")
-
+    st.set_page_config(page_title="Sport Analyzer", page_icon="🏆", layout="wide")
     init_state()
 
     cfg = Config()
@@ -187,15 +203,14 @@ def main():
     weather = WeatherCollector(cfg)
     news = NewsCollector(cfg)
 
+    # Важно: не передаём xg= (мы уже ловили ошибку), пока не согласуем сигнатуру
     analyzer = MatchAnalyzer(cfg, sports=sports, weather=weather, news=news)
 
-    page = st.sidebar.radio(
-        "Раздел",
-        ["Анализ", "Расписание", "История", "Диагностика"]
-    )
+    st.sidebar.title("🏆 Sport Analyzer")
+    page = st.sidebar.radio("Раздел", ["Анализ", "Расписание", "История", "Диагностика"], index=0)
 
     if page == "Анализ":
-        page_analyze(analyzer, sports, cfg)
+        page_analyze(analyzer, sports, cfg, api)
     elif page == "Расписание":
         page_schedule(sports)
     elif page == "История":
