@@ -750,12 +750,16 @@ def page_opportunities(analyzer, sports):
     with c3:
         autoref = st.checkbox("Автообновление", value=False)
 
-    if autoref:
+    autoref = st.checkbox("Автообновление", value=False)
+
+if autoref:
     # Streamlit doesn't have st.autorefresh in v1.33.0.
     # Use optional dependency if installed; otherwise just show a hint.
     try:
         from streamlit_autorefresh import st_autorefresh  # type: ignore
         st_autorefresh(interval=30_000, key="auto_scan_refresh")
+    except Exception:
+        st.info("Автообновление недоступно (нет пакета streamlit-autorefresh). Обновляй страницу вручную.")
     except Exception:
         st.info("Автообновление недоступно (нет пакета streamlit-autorefresh). Обновляй страницу вручную.")
     except Exception:
