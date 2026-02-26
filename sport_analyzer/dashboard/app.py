@@ -207,10 +207,12 @@ def main():
     analyzer = MatchAnalyzer(cfg, sports=sports, weather=weather, news=news)
 
     st.sidebar.title("🏆 Sport Analyzer")
-    page = st.sidebar.radio("Раздел", ["Анализ", "Расписание", "История", "Диагностика"], index=0)
+    page = st.sidebar.radio("Раздел", [["Анализ", "Сигналы", "Расписание", "История", "Диагностика"]], index=0)
 
     if page == "Анализ":
         page_analyze(analyzer, sports, cfg, api)
+    elif page == "Сигналы":
+    page_signals(api)
     elif page == "Расписание":
         page_schedule(sports)
     elif page == "История":
@@ -283,3 +285,107 @@ def page_history(cfg: Config):
 
         except Exception as e:
             st.error(str(e))
+
+# ============================================================
+# STEP 3 — SIGNALS ENGINE
+# ============================================================
+
+def _movement_from_history(df_hist: pd.DataFrame, window_min: int) -> pd.DataFrame:
+    if df_hist.empty:
+        return pd.DataFrame()
+
+    df = df_hist.copy()
+    df["ts"] = pd.to_numeric(df["ts"], errors="coerce")
+    df = df.dropna(subset=["ts"])
+
+    if df.empty:
+        return pd.DataFrame()
+
+    latest_ts = df["ts"].max()
+    cutoff = latest_ts - window_min * 60
+
+    base = df[df["ts"] >= cutoff].copy()
+    if base.empty:
+        return pd.DataFrame()
+
+    base = base.sort_values("ts")
+
+    grp = ["market", "selection"]
+
+    first = base.groupby(grp, as_index=False).first()
+    last = base.groupby(grp, as_index=False).last()
+
+    merged = first.merge(last, on=grp, suffixes=("_start", "_last"))
+
+    for col in ["best_odd", "avg_odd"]:
+        if f"{col}_start" in merged and f"{col}_last" in merged:
+            merged[f"{col}_chg_pct"] = (
+                merged[f"{col}_last"].astype(float)
+                / (merged[f"{col}_start"].astype(float) + 1e-9)
+                - 1
+            ) * 100
+
+    merged["steam_score"] = (-merged.get("best_odd_chg_pct", 0)).clip(lower=0)
+
+    return merged
+
+
+def page_signals(api: ApiSportsCollector):
+    st.title("📡 Сигналы (движение линии)")
+
+    if not api.is_configured():
+        st.error("API_FOOTBALL_KEY не задан в Secrets.")
+        return
+
+    date_sel = st.date_input("Дата", value=datetime.utcnow().date())
+
+    with st.spinner("Загрузка fixtures…"):
+        fixtures = api.get_fixtures_by_date(
+            date_sel.strftime("%Y-%m-%d"),
+            timezone="UTC",
+            use_cache=True,
+        )
+
+    if not fixtures:
+        st.warning("Fixtures не найдены.")
+        return
+
+    df_fx = pd.DataFrame(fixtures)
+    df_fx["match"] = df_fx["home_team"] + " — " + df_fx["away_team"]
+
+    options = {
+        f"{r['league']} • {r['match']}": r["fixture_id"]
+        for _, r in df_fx.iterrows()
+    }
+
+    label = st.selectbox("Матч", list(options.keys()))
+    fixture_id = options[label]
+
+    if st.button("📸 Снять snapshot"):
+        odds = api.get_odds_for_fixture(int(fixture_id), use_cache=False)
+        api.save_snapshot_from_odds(int(fixture_id), odds)
+        st.success("Snapshot сохранён")
+
+    hist = api.get_snapshot_history(int(fixture_id), hours=24)
+
+    if not hist:
+        st.info("История snapshot пока пустая.")
+        return
+
+    dfh = pd.DataFrame(hist)
+
+    frames = []
+    for w in (10, 30, 60):
+        frames.append(_movement_from_history(dfh, w))
+
+    dfm = pd.concat(frames, ignore_index=True)
+
+    if dfm.empty:
+        st.info("Недостаточно snapshot.")
+        return
+
+    st.dataframe(
+        dfm.sort_values("steam_score", ascending=False),
+        use_container_width=True,
+        hide_index=True,
+    )
