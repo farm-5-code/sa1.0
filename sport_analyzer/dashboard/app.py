@@ -943,3 +943,16 @@ def _cached_matches(days_ahead: int):
 
     # fallback to demo
     return _demo_matches(days_ahead=int(days_ahead))
+
+# ============================================================
+# GLOBAL NAVIGATION STATE
+# ============================================================
+
+def open_analysis(home, away, match_date=None):
+    st.session_state["nav_page"] = "🥇 Анализ"
+    st.session_state["prefill_match"] = {
+        "home": home,
+        "away": away,
+        "date": match_date,
+    }
+    st.rerun()
