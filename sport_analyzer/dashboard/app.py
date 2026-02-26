@@ -192,7 +192,6 @@ def page_diagnostics(cfg: Config, api: ApiSportsCollector):
 
 # ---------- MAIN ----------
 def main():
-    st.set_page_config(page_title="Sport Analyzer", page_icon="🏆", layout="wide")
     init_state()
 
     cfg = Config()
