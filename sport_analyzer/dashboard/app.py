@@ -223,10 +223,6 @@ def main():
         page_history(cfg)
     else:
         page_diagnostics(cfg, api)
-
-
-if __name__ == "__main__":
-    main()
     
 # ============================================================
 # STEP 2 EXTENSION — Schedule + History implementation
