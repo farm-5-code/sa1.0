@@ -557,3 +557,99 @@ def page_insights():
     if isinstance(factors, dict) and factors:
         st.subheader("Факторы модели")
         st.json(factors)
+
+# ============================================================
+# STEP 5 — INSIGHTS (Explainability)
+# ============================================================
+
+import matplotlib.pyplot as plt
+
+
+def page_insights():
+    st.title("🧠 Insights")
+
+    result = st.session_state.get("result") or {}
+    if not result:
+        st.info("Сначала запусти Анализ, чтобы появился результат.")
+        return
+
+    home_team = str(result.get("home_team", "Home"))
+    away_team = str(result.get("away_team", "Away"))
+    st.caption(f"{home_team} vs {away_team}")
+
+    probs = result.get("final_probs") or {}
+    p_home = float(probs.get("home_win", 0.0) or 0.0)
+    p_draw = float(probs.get("draw", 0.0) or 0.0)
+    p_away = float(probs.get("away_win", 0.0) or 0.0)
+
+    st.subheader("Вероятности 1X2")
+    fig, ax = plt.subplots()
+    ax.bar(["Home", "Draw", "Away"], [p_home, p_draw, p_away])
+    ax.set_ylabel("Probability")
+    st.pyplot(fig, clear_figure=True)
+    plt.close(fig)
+
+    conf = float(result.get("confidence", 0.0) or 0.0)
+    st.subheader("Уверенность")
+    st.metric("Confidence", f"{conf:.1f}%")
+    if conf >= 60:
+        st.success("Высокая уверенность модели")
+    elif conf >= 48:
+        st.warning("Средняя уверенность модели")
+    else:
+        st.info("Низкая уверенность модели")
+
+    recs = result.get("recommendations") or []
+    if recs:
+        st.subheader("Рекомендации")
+        for r in recs:
+            st.write("•", r)
+
+    # если в результатах есть какие-то факторы — покажем
+    factors = result.get("factors") or result.get("model_factors") or {}
+    if isinstance(factors, dict) and factors:
+        with st.expander("Факторы модели", expanded=False):
+            st.json(factors)
+
+    with st.expander("Raw result", expanded=False):
+        st.json(result)
+
+
+# ----------------- override MAIN with Insights tab -----------------
+
+def main():
+    st.set_page_config(page_title="Sport Analyzer", page_icon="🏆", layout="wide")
+    init_state()
+
+    cfg = Config()
+    ensure_db(cfg.DB_PATH)
+
+    sports = SportsCollector(cfg)
+    api = ApiSportsCollector(cfg)
+    weather = WeatherCollector(cfg)
+    news = NewsCollector(cfg)
+
+    analyzer = MatchAnalyzer(cfg, sports=sports, weather=weather, news=news)
+
+    st.sidebar.title("🏆 Sport Analyzer")
+    page = st.sidebar.radio(
+        "Раздел",
+        ["Анализ", "Opportunities", "Insights", "Сигналы", "Расписание", "История", "Диагностика"],
+        index=0,
+    )
+
+    if page == "Анализ":
+        page_analyze(analyzer, sports, cfg, api)
+    elif page == "Opportunities":
+        page_opportunities(analyzer, sports)
+    elif page == "Insights":
+        page_insights()
+    elif page == "Сигналы":
+        page_signals(api)
+    elif page == "Расписание":
+        page_schedule(sports)
+    elif page == "История":
+        page_history(cfg)
+    else:
+        page_diagnostics(cfg, api)
+main()
