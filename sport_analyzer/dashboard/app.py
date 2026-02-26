@@ -625,25 +625,27 @@ def main():
     analyzer = MatchAnalyzer(cfg, sports=sports, weather=weather, news=news)
 
     st.sidebar.title("🏆 Sport Analyzer")
-# --- one-click navigation request (must be BEFORE radio) ---
-if st.session_state.pop("goto_analysis", False):
-    st.session_state["main_navigation_radio"] = "🏆 Анализ"
+
+    # --- one-click navigation request (must be BEFORE radio) ---
+    if st.session_state.pop("goto_analysis", False):
+        st.session_state["main_navigation_radio"] = "🏆 Анализ"
+
     page = st.sidebar.radio(
         "Раздел",
         [
-        "🏆 Анализ",
-        "⚡ Auto Scanner",
-        "🔥 Opportunities",
-        "🧠 Insights",
-        "📡 Сигналы",
-        "📅 Расписание",
-        "📚 История",
-        "🧪 Диагностика",
+            "🏆 Анализ",
+            "⚡ Auto Scanner",
+            "🔥 Opportunities",
+            "🧠 Insights",
+            "📡 Сигналы",
+            "📅 Расписание",
+            "📚 История",
+            "🧪 Диагностика",
         ],
         index=0,
         key="main_navigation_radio",
     )
-    
+
     if page == "🏆 Анализ":
         page_analyze(analyzer, sports, cfg, api)
 
