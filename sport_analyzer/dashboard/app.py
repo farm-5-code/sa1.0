@@ -956,3 +956,212 @@ def open_analysis(home, away, match_date=None):
         "date": match_date,
     }
     st.rerun()
+# ============================================================
+# STEP 7 (v2) — One-click Analyze WITHOUT changing menu
+# Adds a small "Analyze selected" panel to Auto Scanner results
+# ============================================================
+
+def _nav_to_analysis(home: str, away: str, dt: str | None = None):
+    # сохраним префилл и попросим main открыть Анализ
+    st.session_state["prefill_match"] = {"home": home, "away": away, "dt": dt}
+    st.session_state["force_page"] = "🏆 Анализ"
+    st.rerun()
+
+
+def _apply_prefill_to_analyze_ui():
+    """
+    Helper: call this at top of page_analyze if you want automatic prefill.
+    But we can't edit page_analyze now; so we will store values in session_state
+    and rely on existing text_input default logic (we'll override page_analyze below).
+    """
+
+
+def page_analyze(analyzer: MatchAnalyzer, sports: SportsCollector, cfg: Config, api: ApiSportsCollector):
+    """
+    Override page_analyze to support prefill from Auto Scanner,
+    without touching your menu.
+    """
+    st.title("🏆 Анализ")
+    st.caption("One-click analyze: матч может подставляться из Auto Scanner.")
+
+    prefill = st.session_state.pop("prefill_match", None)
+    if prefill:
+        st.session_state["home_prefill"] = prefill.get("home") or "Arsenal"
+        st.session_state["away_prefill"] = prefill.get("away") or "Chelsea"
+
+    home_default = st.session_state.get("home_prefill", "Arsenal")
+    away_default = st.session_state.get("away_prefill", "Chelsea")
+
+    home = st.text_input("Home", value=home_default, key="an_home")
+    away = st.text_input("Away", value=away_default, key="an_away")
+    match_date = st.date_input("Дата", value=date.today(), key="an_date")
+    match_time = st.time_input("Время (UTC)", value=datetime.utcnow().time(), key="an_time")
+
+    if st.button("🚀 Анализировать", type="primary"):
+        st.session_state["last_error"] = ""
+        try:
+            result = analyzer.analyze_match(
+                home_team=normalize_team_name(home),
+                away_team=normalize_team_name(away),
+                match_datetime=f"{match_date}T{match_time}:00",
+            )
+            st.session_state["result"] = result
+            st.session_state["last_run_at"] = datetime.utcnow().isoformat()
+            save_analysis(cfg.DB_PATH, result)
+        except Exception as e:
+            st.session_state["last_error"] = str(e)
+            logger.exception("analyze failed: %s", e)
+
+    if st.session_state.get("last_error"):
+        st.error(st.session_state["last_error"])
+
+    render_result(st.session_state.get("result") or {})
+
+
+def page_opportunities(analyzer, sports):
+    """
+    Override Auto Scanner page to add:
+    - after scan results, a selector + 🔍 Analyze button
+    Does not change menu routing at all.
+    """
+    st.title("🔥 Opportunities — Auto Scanner")
+    st.caption("Авто-скан ближайших матчей и топ прогнозов по уверенности (кеш ускоряет повторные запуски).")
+
+    c1, c2, c3 = st.columns([1, 1, 1])
+    with c1:
+        days = st.slider("Дней вперёд", 1, 7, 2)
+    with c2:
+        top_n = st.slider("Топ матчей", 5, 50, 15)
+    with c3:
+        autoref = st.checkbox("Автообновление", value=False)
+
+    if autoref:
+        st.autorefresh(interval=30_000, key="auto_scan_refresh")
+
+    matches = _cached_matches(int(days))
+    if not matches:
+        st.warning("Матчи не найдены. Проверь FOOTBALL_DATA_KEY. (или DEMO fallback)")
+        return
+
+    df = pd.DataFrame(matches)
+    if df.empty:
+        st.warning("Пустой список матчей.")
+        return
+
+    run_scan = st.button("🚀 Запустить авто-скан", type="primary", use_container_width=True)
+
+    cached_scan = st.session_state.get("auto_scan_rows")
+    cached_meta = st.session_state.get("auto_scan_meta")
+
+    if cached_scan and cached_meta and not run_scan:
+        st.info(f"Показаны результаты последнего скана: {cached_meta}")
+        out = pd.DataFrame(cached_scan)
+        out = out.head(int(top_n))
+        st.dataframe(out, use_container_width=True, hide_index=True)
+
+        # --- one-click analyze panel ---
+        _one_click_panel(out)
+        return
+
+    if not run_scan:
+        st.info("Нажми «Запустить авто-скан», чтобы построить рейтинг матчей.")
+        return
+
+    rows = []
+    prog = st.progress(0.0)
+    total = len(df)
+
+    for i, r in enumerate(df.to_dict("records"), start=1):
+        prog.progress(i / max(1, total))
+
+        home = str(r.get("home_team") or r.get("homeTeam") or "").strip()
+        away = str(r.get("away_team") or r.get("awayTeam") or "").strip()
+        if not home or not away:
+            continue
+
+        match_dt = str(r.get("utcDate") or r.get("date") or "") or datetime.utcnow().isoformat()
+
+        h_id = r.get("home_team_id") or r.get("homeTeamId") or 0
+        a_id = r.get("away_team_id") or r.get("awayTeamId") or 0
+        h_id = int(h_id) if int(h_id) else None
+        a_id = int(a_id) if int(a_id) else None
+
+        try:
+            res = _cached_analyze(home, away, match_dt, h_id, a_id)
+        except Exception:
+            continue
+
+        probs = res.get("final_probs") or {}
+        ph = _prob_safe(probs.get("home_win", 0))
+        pdw = _prob_safe(probs.get("draw", 0))
+        pa = _prob_safe(probs.get("away_win", 0))
+
+        pick = "Home"
+        pmax = ph
+        if pdw > pmax:
+            pick, pmax = "Draw", pdw
+        if pa > pmax:
+            pick, pmax = "Away", pa
+
+        conf = float(res.get("confidence", pmax * 100) or (pmax * 100))
+
+        rows.append(
+            {
+                "datetime": match_dt,
+                "league": r.get("competition") or r.get("league") or "",
+                "home": home,
+                "away": away,
+                "pick": pick,
+                "confidence_%": round(conf, 1),
+                "p_pick": round(pmax, 4),
+                "p_home": round(ph, 4),
+                "p_draw": round(pdw, 4),
+                "p_away": round(pa, 4),
+            }
+        )
+
+    prog.empty()
+
+    out = pd.DataFrame(rows)
+    if out.empty:
+        st.warning("Скан не дал результатов.")
+        return
+
+    out = out.sort_values(["confidence_%", "p_pick"], ascending=False)
+    st.session_state["auto_scan_rows"] = out.to_dict("records")
+    st.session_state["auto_scan_meta"] = f"{datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')} | days={days} | matches={len(out)}"
+
+    st.success("Скан завершён ✅")
+    out_top = out.head(int(top_n))
+    st.dataframe(out_top, use_container_width=True, hide_index=True)
+
+    _one_click_panel(out_top)
+
+    with st.expander("💾 Очистить кеш скана", expanded=False):
+        if st.button("Очистить auto-scan кеш", use_container_width=True):
+            st.session_state.pop("auto_scan_rows", None)
+            st.session_state.pop("auto_scan_meta", None)
+            st.success("Очищено. Перезапусти скан.")
+
+
+def _one_click_panel(out_df: pd.DataFrame):
+    if out_df is None or out_df.empty:
+        return
+
+    st.subheader("🔍 One-Click Analyze")
+    options = []
+    for r in out_df.to_dict("records"):
+        options.append(f"{r.get('home')} — {r.get('away')}  |  {r.get('confidence_%')}%")
+
+    choice = st.selectbox("Выбери матч", options, key="oneclick_select")
+
+    idx = options.index(choice)
+    row = out_df.to_dict("records")[idx]
+
+    cols = st.columns([1, 1])
+    with cols[0]:
+        st.write(f"**{row.get('home')} — {row.get('away')}**")
+        st.caption(f"Pick: {row.get('pick')} | Conf: {row.get('confidence_%')}%")
+    with cols[1]:
+        if st.button("🔍 Открыть анализ", type="primary", use_container_width=True, key="oneclick_go"):
+            _nav_to_analysis(row.get("home"), row.get("away"), row.get("datetime"))
