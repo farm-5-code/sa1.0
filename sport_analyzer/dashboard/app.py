@@ -482,7 +482,7 @@ def main():
     weather = WeatherCollector(cfg)  # used inside analyzer
     news = NewsCollector(cfg)        # used inside analyzer
     xg = XGCollector(cfg)            # used inside analyzer
-    analyzer = MatchAnalyzer(cfg, sports=sports, weather=weather, news=news, xg=xg)
+    analyzer = MatchAnalyzer(cfg, sports=sports, weather=weather, news=news )
 
     st.sidebar.title("🏆 Sport Analyzer")
     page = st.sidebar.radio(
