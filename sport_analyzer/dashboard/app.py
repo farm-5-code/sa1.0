@@ -613,7 +613,6 @@ def page_insights():
 # ----------------- override MAIN with Insights tab -----------------
 
 def main():
-    st.set_page_config(page_title="Sport Analyzer", page_icon="🏆", layout="wide")
     init_state()
 
     cfg = Config()
