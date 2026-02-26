@@ -751,8 +751,11 @@ def page_opportunities(analyzer, sports):
         autoref = st.checkbox("Автообновление", value=False)
 
     if autoref:
-        # мягкое обновление, чтобы лента выглядела «живой»
-        st.autorefresh(interval=30_000, key="auto_scan_refresh")
+    try:
+        from streamlit_autorefresh import st_autorefresh
+        st_autorefresh(interval=30_000, key="auto_scan_refresh")
+    except Exception:
+        st.info("⏱ Автообновление недоступно (нет streamlit-autorefresh)")
 
     # кешируем список матчей
     matches = _cached_matches(int(days))
