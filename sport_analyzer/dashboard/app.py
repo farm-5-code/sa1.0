@@ -647,4 +647,4 @@ def main():
         page_history(cfg)
     else:
         page_diagnostics(cfg, api)
-main()
+
