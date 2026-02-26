@@ -212,7 +212,7 @@ def main():
     if page == "Анализ":
         page_analyze(analyzer, sports, cfg, api)
     elif page == "Сигналы":
-    page_signals(api)
+        page_signals(api)
     elif page == "Расписание":
         page_schedule(sports)
     elif page == "История":
