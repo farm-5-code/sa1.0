@@ -629,7 +629,7 @@ def main():
         "Раздел",
         [
         "🏆 Анализ",
-        "⚡ Auto Scanner"
+        "⚡ Auto Scanner",
         "🔥 Opportunities",
         "🧠 Insights",
         "📡 Сигналы",
