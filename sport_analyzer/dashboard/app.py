@@ -625,6 +625,9 @@ def main():
     analyzer = MatchAnalyzer(cfg, sports=sports, weather=weather, news=news)
 
     st.sidebar.title("🏆 Sport Analyzer")
+# --- one-click navigation request (must be BEFORE radio) ---
+if st.session_state.pop("goto_analysis", False):
+    st.session_state["main_navigation_radio"] = "🏆 Анализ"
     page = st.sidebar.radio(
         "Раздел",
         [
@@ -640,9 +643,7 @@ def main():
         index=0,
         key="main_navigation_radio",
     )
-# --- navigation override (one-click analyze) ---
-if st.session_state.pop("goto_analysis", False):
-    page = "🏆 Анализ"
+    
     if page == "🏆 Анализ":
         page_analyze(analyzer, sports, cfg, api)
 
