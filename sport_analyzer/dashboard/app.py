@@ -807,32 +807,31 @@ def page_opportunities(analyzer, sports):
         h_id = int(h_id) if int(h_id) else None
         a_id = int(a_id) if int(a_id) else None
 
-        try:
+                try:
             res = _cached_analyze(home, away, match_dt, h_id, a_id)
         except Exception:
             continue
 
         probs = res.get("final_probs") or {}
+
         ph = _prob_safe(probs.get("home_win", 0))
         pdw = _prob_safe(probs.get("draw", 0))
         pa = _prob_safe(probs.get("away_win", 0))
 
         pick = "Home"
         pmax = ph
+
         if pdw > pmax:
             pick, pmax = "Draw", pdw
         if pa > pmax:
             pick, pmax = "Away", pa
 
-        # confidence (%)
         conf = float(res.get("confidence", pmax * 100) or (pmax * 100))
 
-        # edge — насколько лучший исход сильнее второго
         probs_sorted = sorted([ph, pdw, pa], reverse=True)
-        p1 = probs_sorted[0] if probs_sorted else 0.0
         p2 = probs_sorted[1] if len(probs_sorted) > 1 else 0.0
-        edge_pct = (p1 - p2) * 100.0
-        # общий AI score
+        edge_pct = (pmax - p2) * 100.0
+
         score = 0.65 * conf + 0.35 * edge_pct
 
         rows.append(
@@ -850,7 +849,7 @@ def page_opportunities(analyzer, sports):
                 "p_draw": round(pdw, 4),
                 "p_away": round(pa, 4),
             }
-)
+        )
     prog.empty()
 
     out = pd.DataFrame(rows)
