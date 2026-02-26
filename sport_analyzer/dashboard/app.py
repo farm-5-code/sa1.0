@@ -221,3 +221,64 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # ============================================================
+# STEP 2 EXTENSION — Schedule + History implementation
+# (вставляется В КОНЕЦ файла, ничего выше менять не нужно)
+# ============================================================
+
+
+def page_schedule(sports: SportsCollector):
+    st.title("📅 Расписание")
+
+    days = st.slider("Дней вперёд", 1, 14, 7)
+
+    with st.spinner("Загружаем матчи…"):
+        matches = sports.get_matches(days_ahead=days) or []
+
+    if not matches:
+        st.warning("Матчи не найдены. Проверь FOOTBALL_DATA_KEY.")
+        return
+
+    df = pd.DataFrame(matches)
+
+    # best-effort formatting
+    for col in ["date", "utcDate"]:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors="coerce").dt.strftime("%d.%m %H:%M")
+
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+
+
+def page_history(cfg: Config):
+    st.title("🕘 История анализов")
+
+    limit = st.slider("Сколько записей показать", 50, 1000, 300, step=50)
+
+    df = load_analyses(cfg.DB_PATH, limit=int(limit))
+
+    if df.empty:
+        st.info("История пока пустая.")
+        return
+
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+    # просмотр raw json результата
+    with st.expander("📦 Открыть сохранённый результат", expanded=False):
+        pick_id = st.number_input("ID анализа", value=int(df.iloc[0]["id"]), step=1)
+
+        try:
+            with sqlite3.connect(cfg.DB_PATH) as c:
+                row = c.execute(
+                    "SELECT analysis_json FROM analyses WHERE id=?",
+                    (int(pick_id),),
+                ).fetchone()
+
+            if not row:
+                st.warning("Запись не найдена.")
+                return
+
+            st.json(json.loads(row[0]))
+
+        except Exception as e:
+            st.error(str(e))
