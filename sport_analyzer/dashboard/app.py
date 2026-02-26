@@ -965,15 +965,8 @@ def open_analysis(home, away, match_date=None):
 # ============================================================
 
 def _nav_to_analysis(home: str, away: str, dt: str | None = None):
-    st.session_state["prefill_match"] = {
-        "home": home,
-        "away": away,
-        "dt": dt,
-    }
-
-    # вместо переключения radio — запрос навигации
+    st.session_state["prefill_match"] = {"home": home, "away": away, "dt": dt}
     st.session_state["goto_analysis"] = True
-
     st.rerun()
 
 
