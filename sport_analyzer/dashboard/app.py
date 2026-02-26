@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 logger = logging.getLogger("sport_analyzer.dashboard")
 # --- Streamlit state init ---
 if "result" not in st.session_state:
- ул. сессия_государство["Результат"]  =  {}
+    st.session_state["result"] = {}
   
 # Fallback: make sure repo root is on sys.path when запуск идет из подпапки
 try:
@@ -54,7 +54,7 @@ def _plot_odds_history(df_hist: pd.DataFrame, market: str, selection: str):
         return
     d = df_hist[(df_hist["market"] == market) & (df_hist["selection"] == selection)].copy()
     if d.empty:
-         st.info("Нет данных для выбранной комбинации.") info("Нет данных для выбранной комбинации.")
+         st.info("Нет данных для выбранной комбинации.")
         return
     d["ts"] = pd.to_numeric(d["ts"], errors="coerce")
     d = d.dropna(subset=["ts"]).sort_values("ts")
