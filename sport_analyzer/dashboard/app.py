@@ -660,3 +660,193 @@ def main():
 
     else:
         page_diagnostics(cfg, api)
+
+# ============================================================
+# STEP 6 — AUTO SCANNER + TURBO CACHE (insert BEFORE last main())
+# ============================================================
+
+from datetime import timedelta
+
+
+@st.cache_resource
+def _services():
+    """
+    Heavy objects: config + collectors + analyzer.
+    Cached across reruns for speed.
+    """
+    cfg = Config()
+    sports = SportsCollector(cfg)
+    api = ApiSportsCollector(cfg)
+    weather = WeatherCollector(cfg)
+    news = NewsCollector(cfg)
+    analyzer = MatchAnalyzer(cfg, sports=sports, weather=weather, news=news)
+    return cfg, sports, api, analyzer
+
+
+@st.cache_data(ttl=30 * 60)
+def _cached_matches(days_ahead: int):
+    """
+    Cached fixtures list (football-data).
+    """
+    cfg, sports, api, analyzer = _services()
+    return sports.get_matches(days_ahead=int(days_ahead)) or []
+
+
+@st.cache_data(ttl=6 * 60 * 60)
+def _cached_analyze(
+    home: str,
+    away: str,
+    match_datetime: str,
+    home_id: int | None = None,
+    away_id: int | None = None,
+):
+    """
+    Cached analysis per match (keyed by inputs).
+    """
+    cfg, sports, api, analyzer = _services()
+    return analyzer.analyze_match(
+        home_team=normalize_team_name(home),
+        away_team=normalize_team_name(away),
+        match_datetime=match_datetime,
+        home_team_id=home_id,
+        away_team_id=away_id,
+    )
+
+
+def _prob_safe(x):
+    try:
+        v = float(x)
+    except Exception:
+        return 0.0
+    if v != v:
+        return 0.0
+    return max(0.0, min(1.0, v))
+
+
+def page_opportunities(analyzer, sports):
+    """
+    Override previous Opportunities with:
+    ✅ cached fixtures
+    ✅ cached analyze
+    ✅ auto-scan button
+    """
+    st.title("🔥 Opportunities — Auto Scanner")
+    st.caption("Авто-скан ближайших матчей и топ прогнозов по уверенности (кеш ускоряет повторные запуски).")
+
+    c1, c2, c3 = st.columns([1, 1, 1])
+    with c1:
+        days = st.slider("Дней вперёд", 1, 7, 2)
+    with c2:
+        top_n = st.slider("Топ матчей", 5, 50, 15)
+    with c3:
+        autoref = st.checkbox("Автообновление", value=False)
+
+    if autoref:
+        # мягкое обновление, чтобы лента выглядела «живой»
+        st.autorefresh(interval=30_000, key="auto_scan_refresh")
+
+    # кешируем список матчей
+    matches = _cached_matches(int(days))
+    if not matches:
+        st.warning("Матчи не найдены. Проверь FOOTBALL_DATA_KEY.")
+        return
+
+    df = pd.DataFrame(matches)
+    if df.empty:
+        st.warning("Пустой список матчей.")
+        return
+
+    # Нажатие кнопки принудительно прогоняет анализ (даже если таблица уже есть)
+    run_scan = st.button("🚀 Запустить авто-скан", type="primary", use_container_width=True)
+
+    # Если уже есть результаты прошлого скана — показываем сразу (быстро)
+    cached_scan = st.session_state.get("auto_scan_rows")
+    cached_meta = st.session_state.get("auto_scan_meta")
+
+    if cached_scan and cached_meta and not run_scan:
+        st.info(f"Показаны результаты последнего скана: {cached_meta}")
+        out = pd.DataFrame(cached_scan)
+        st.dataframe(out.head(int(top_n)), use_container_width=True, hide_index=True)
+        return
+
+    if not run_scan:
+        st.info("Нажми «Запустить авто-скан», чтобы построить рейтинг матчей.")
+        return
+
+    rows = []
+    prog = st.progress(0.0)
+    total = len(df)
+
+    for i, r in enumerate(df.to_dict("records"), start=1):
+        prog.progress(i / max(1, total))
+
+        home = str(r.get("home_team") or r.get("homeTeam") or "").strip()
+        away = str(r.get("away_team") or r.get("awayTeam") or "").strip()
+        if not home or not away:
+            continue
+
+        match_dt = str(r.get("utcDate") or r.get("date") or "")
+        if not match_dt:
+            # если нет даты — ставим «сейчас», но лучше когда football-data вернёт дату
+            match_dt = datetime.utcnow().isoformat()
+
+        h_id = r.get("home_team_id") or r.get("homeTeamId") or 0
+        a_id = r.get("away_team_id") or r.get("awayTeamId") or 0
+        h_id = int(h_id) if int(h_id) else None
+        a_id = int(a_id) if int(a_id) else None
+
+        try:
+            res = _cached_analyze(home, away, match_dt, h_id, a_id)
+        except Exception:
+            continue
+
+        probs = res.get("final_probs") or {}
+        ph = _prob_safe(probs.get("home_win", 0))
+        pdw = _prob_safe(probs.get("draw", 0))
+        pa = _prob_safe(probs.get("away_win", 0))
+
+        pick = "Home"
+        pmax = ph
+        if pdw > pmax:
+            pick, pmax = "Draw", pdw
+        if pa > pmax:
+            pick, pmax = "Away", pa
+
+        conf = float(res.get("confidence", pmax * 100) or (pmax * 100))
+
+        rows.append(
+            {
+                "datetime": match_dt,
+                "league": r.get("competition") or r.get("league") or "",
+                "home": home,
+                "away": away,
+                "pick": pick,
+                "confidence_%": round(conf, 1),
+                "p_pick": round(pmax, 4),
+                "p_home": round(ph, 4),
+                "p_draw": round(pdw, 4),
+                "p_away": round(pa, 4),
+            }
+        )
+
+    prog.empty()
+
+    out = pd.DataFrame(rows)
+    if out.empty:
+        st.warning("Скан не дал результатов (возможно, не хватает данных/ключей).")
+        return
+
+    out = out.sort_values(["confidence_%", "p_pick"], ascending=False)
+
+    # сохраним в session_state, чтобы при переключении вкладок не считать заново
+    st.session_state["auto_scan_rows"] = out.to_dict("records")
+    st.session_state["auto_scan_meta"] = f"{datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')} | days={days} | matches={len(out)}"
+
+    st.success("Скан завершён ✅")
+    st.dataframe(out.head(int(top_n)), use_container_width=True, hide_index=True)
+
+    with st.expander("💾 Очистить кеш скана", expanded=False):
+        if st.button("Очистить auto-scan кеш", use_container_width=True):
+            st.session_state.pop("auto_scan_rows", None)
+            st.session_state.pop("auto_scan_meta", None)
+            st.success("Очищено. Перезапусти скан.")
