@@ -51,11 +51,11 @@ def _plot_odds_history(df_hist: pd.DataFrame, market: str, selection: str):
     """Line chart for best/avg odds over time."""
     if df_hist.empty:
          st.info("История пустая.")
-        return
+         return
     d = df_hist[(df_hist["market"] == market) & (df_hist["selection"] == selection)].copy()
     if d.empty:
          st.info("Нет данных для выбранной комбинации.")
-        return
+         return
     d["ts"] = pd.to_numeric(d["ts"], errors="coerce")
     d = d.dropna(subset=["ts"]).sort_values("ts")
     x = pd.to_datetime(d["ts"], unit="s", utc=True)
