@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sport-analyzer"
+version = "0.1.0"
+description = "Sport Analyzer: multi-factor match analytics (Poisson/ELO/Dixon-Coles/ML + weather/news)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Sport Analyzer"}]
+
+dependencies = [
+  "requests==2.31.0",
+  "aiohttp==3.9.1",
+  "pandas==2.2.0",
+  "numpy==1.26.4",
+  "scikit-learn==1.4.1.post1",
+  "vaderSentiment==3.3.2",
+  "textblob==0.17.1",
+  "nba_api==1.4.0",
+  "streamlit>=1.32.0,<1.34.0",
+  "plotly==5.19.0",
+  "python-dotenv==1.0.1",
+  "colorama==0.4.6",
+  "tabulate==0.9.0",
+  "schedule==1.2.1",
+]
+
+[project.scripts]
+sport-analyzer = "sport_analyzer.main:main"
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sport_analyzer*"]
