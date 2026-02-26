@@ -640,23 +640,23 @@ def main():
         key="main_navigation_radio",
     )
 
-if page == "🏆 Анализ":
-    page_analyze(analyzer, sports, cfg, api)
+    if page == "🏆 Анализ":
+        page_analyze(analyzer, sports, cfg, api)
 
-elif page == "🔥 Opportunities":
-    page_opportunities(analyzer, sports)
+    elif page == "🔥 Opportunities":
+        page_opportunities(analyzer, sports)
 
-elif page == "🧠 Insights":
-    page_insights()
+    elif page == "🧠 Insights":
+        page_insights()
 
-elif page == "📡 Сигналы":
-    page_signals(api)
+    elif page == "📡 Сигналы":
+        page_signals(api)
 
-elif page == "📅 Расписание":
-    page_schedule(sports)
+    elif page == "📅 Расписание":
+        page_schedule(sports)
 
-elif page == "📚 История":
-    page_history(cfg)
+    elif page == "📚 История":
+        page_history(cfg)
 
-else:
-    page_diagnostics(cfg, api)
+    else:
+        page_diagnostics(cfg, api)
