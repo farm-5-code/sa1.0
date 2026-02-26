@@ -790,6 +790,7 @@ def page_opportunities(analyzer, sports):
     total = len(df)
 
     for i, r in enumerate(df.to_dict("records"), start=1):
+    for i, r in enumerate(df.to_dict("records"), start=1):
     prog.progress(i / max(1, total))
 
     home = str(r.get("home_team") or r.get("homeTeam") or "").strip()
