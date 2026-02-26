@@ -629,6 +629,7 @@ def main():
         "Раздел",
         [
         "🏆 Анализ",
+        "⚡ Auto Scanner"
         "🔥 Opportunities",
         "🧠 Insights",
         "📡 Сигналы",
@@ -642,6 +643,9 @@ def main():
 
     if page == "🏆 Анализ":
         page_analyze(analyzer, sports, cfg, api)
+
+    elif page == "⚡ Auto Scanner":
+        page_auto_scanner()
 
     elif page == "🔥 Opportunities":
         page_opportunities(analyzer, sports)
@@ -850,3 +854,11 @@ def page_opportunities(analyzer, sports):
             st.session_state.pop("auto_scan_rows", None)
             st.session_state.pop("auto_scan_meta", None)
             st.success("Очищено. Перезапусти скан.")
+# ============================================================
+# STEP 6.1 — Auto Scanner page (new route)
+# ============================================================
+
+def page_auto_scanner():
+    cfg, sports, api, analyzer = _services()
+    # используем уже кешированную реализацию
+    page_opportunities(analyzer, sports)
