@@ -20,25 +20,24 @@ _CONNECT_TIMEOUT = 10
 
 
 class ELOUpdater:
-
     def __init__(self, config: Config):
-        self.config  = config
-        self.sports  = SportsCollector(config, db_path=config.DB_PATH)
+        self.config = config
+        self.sports = SportsCollector(config, db_path=config.DB_PATH)
         self.db_path = config.DB_PATH
         self._ensure_tables()
 
     def run(self, days_back: int = 3) -> int:
         logger.info(f"Запуск ELO-обновления (последние {days_back} дня)")
-        matches   = self._fetch_finished(days_back)
+        matches = self._fetch_finished(days_back)
         processed = 0
 
         for m in matches:
-            match_id   = m.get("id")
-            home_name  = m.get("home_team")
-            away_name  = m.get("away_team")
+            match_id = m.get("id")
+            home_name = m.get("home_team")
+            away_name = m.get("away_team")
             home_goals = m.get("home_goals")
             away_goals = m.get("away_goals")
-            league     = m.get("competition", "")
+            league = m.get("competition", "")
 
             if home_goals is None or away_goals is None:
                 continue
@@ -54,9 +53,15 @@ class ELOUpdater:
             elo_aa = self.sports.get_elo(away_name)
 
             self._log_update(
-                match_id, home_name, away_name,
-                home_goals, away_goals,
-                elo_bh, elo_ah, elo_ba, elo_aa,
+                match_id,
+                home_name,
+                away_name,
+                home_goals,
+                away_goals,
+                elo_bh,
+                elo_ah,
+                elo_ba,
+                elo_aa,
             )
             logger.info(
                 f"{home_name} {home_goals}:{away_goals} {away_name} | "
@@ -70,7 +75,7 @@ class ELOUpdater:
 
     def _fetch_finished(self, days_back: int) -> list:
         date_from = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
-        date_to   = datetime.utcnow().strftime("%Y-%m-%d")
+        date_to = datetime.utcnow().strftime("%Y-%m-%d")
 
         resp = self.sports.get(
             "https://api.football-data.org/v4/matches",
@@ -82,31 +87,48 @@ class ELOUpdater:
         result = []
         for m in resp.json().get("matches", []):
             score = m.get("score", {}).get("fullTime", {})
-            result.append({
-                "id":          m.get("id"),
-                "home_team":   m.get("homeTeam", {}).get("name"),
-                "away_team":   m.get("awayTeam", {}).get("name"),
-                "home_goals":  score.get("home"),
-                "away_goals":  score.get("away"),
-                "competition": m.get("competition", {}).get("name", ""),
-            })
+            result.append(
+                {
+                    "id": m.get("id"),
+                    "home_team": m.get("homeTeam", {}).get("name"),
+                    "away_team": m.get("awayTeam", {}).get("name"),
+                    "home_goals": score.get("home"),
+                    "away_goals": score.get("away"),
+                    "competition": m.get("competition", {}).get("name", ""),
+                }
+            )
         return result
 
     def _already_updated(self, match_id: int) -> bool:
         with sqlite3.connect(self.db_path, timeout=_CONNECT_TIMEOUT) as c:
-            return bool(c.execute(
-                "SELECT 1 FROM elo_updates WHERE match_id=?", (match_id,)
-            ).fetchone())
+            return bool(
+                c.execute(
+                    "SELECT 1 FROM elo_updates WHERE match_id=?", (match_id,)
+                ).fetchone()
+            )
 
     def _log_update(self, match_id, home, away, hg, ag, ebh, eah, eba, eaa):
         with sqlite3.connect(self.db_path, timeout=_CONNECT_TIMEOUT) as c:
-            c.execute("""
+            c.execute(
+                """
                 INSERT INTO elo_updates
                 (match_id,home_team,away_team,home_goals,away_goals,
                  elo_before_home,elo_after_home,elo_before_away,elo_after_away,updated_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?)
-            """, (match_id, home, away, hg, ag, ebh, eah, eba, eaa,
-                  datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
+            """,
+                (
+                    match_id,
+                    home,
+                    away,
+                    hg,
+                    ag,
+                    ebh,
+                    eah,
+                    eba,
+                    eaa,
+                    datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+                ),
+            )
 
     def _ensure_tables(self):
         with sqlite3.connect(self.db_path, timeout=_CONNECT_TIMEOUT) as c:
@@ -130,6 +152,7 @@ class ELOUpdater:
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--days", type=int, default=3)
     args = parser.parse_args()

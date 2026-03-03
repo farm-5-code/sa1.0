@@ -41,7 +41,9 @@ KEY_PLAYERS: Dict[str, Dict[str, Dict[str, float]]] = {
 }
 
 
-def _match_players(known: Dict[str, Dict[str, float]], injured: Iterable[str]) -> List[Dict[str, float]]:
+def _match_players(
+    known: Dict[str, Dict[str, float]], injured: Iterable[str]
+) -> List[Dict[str, float]]:
     injured_l = [p.lower() for p in injured if p]
     matched: List[Dict[str, float]] = []
     for name, impact in known.items():
@@ -56,12 +58,14 @@ def injury_factors(
     injured_players: Iterable[str],
     suspended_players: Iterable[str] = (),
     *,
-    max_attack_penalty: float = 0.35,   # до -35% атаки
+    max_attack_penalty: float = 0.35,  # до -35% атаки
     max_defense_penalty: float = 0.25,  # до +25% к пропускаемости
 ) -> Dict[str, float]:
     """Возвращает коэффициенты {'attack': factor<=1, 'defense': factor>=1}."""
     injured = [p for p in (injured_players or []) if isinstance(p, str) and p.strip()]
-    suspended = [p for p in (suspended_players or []) if isinstance(p, str) and p.strip()]
+    suspended = [
+        p for p in (suspended_players or []) if isinstance(p, str) and p.strip()
+    ]
     all_absent = injured + suspended
 
     known = KEY_PLAYERS.get(team_name, {})
@@ -85,4 +89,8 @@ def injury_factors(
 
     attack_factor = max(0.65, 1.0 - attack_pen)
     defense_factor = 1.0 + defense_pen
-    return {"attack": round(attack_factor, 3), "defense": round(defense_factor, 3), "matched": len(impacts)}
+    return {
+        "attack": round(attack_factor, 3),
+        "defense": round(defense_factor, 3),
+        "matched": len(impacts),
+    }

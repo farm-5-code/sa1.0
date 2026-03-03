@@ -8,7 +8,12 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from sport_analyzer.utils.team_normalizer import normalize_team_name, strip_legal_suffix, teams_are_same, _to_title
+from sport_analyzer.utils.team_normalizer import (  # noqa: E402
+    normalize_team_name,
+    strip_legal_suffix,
+    teams_are_same,
+    _to_title,
+)
 
 
 def run_tests() -> bool:

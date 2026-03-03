@@ -8,20 +8,47 @@ from sport_analyzer.collectors.base_collector import BaseCollector
 logger = logging.getLogger(__name__)
 
 _INJURY_KEYWORDS = {
-    "injured", "injury", "ruled out", "out for", "out until",
-    "out injured", "fitness doubt", "fitness concern", "doubtful",
-    "hamstring", "muscle strain", "ankle", "knee", "absent",
-    "unavailable", "miss the match", "miss out", "set to miss",
+    "injured",
+    "injury",
+    "ruled out",
+    "out for",
+    "out until",
+    "out injured",
+    "fitness doubt",
+    "fitness concern",
+    "doubtful",
+    "hamstring",
+    "muscle strain",
+    "ankle",
+    "knee",
+    "absent",
+    "unavailable",
+    "miss the match",
+    "miss out",
+    "set to miss",
 }
 
 _SUSPENSION_KEYWORDS = {
-    "suspended", "suspension", "banned", "ban", "red card",
-    "accumulated", "disciplinary", "sent off",
+    "suspended",
+    "suspension",
+    "banned",
+    "ban",
+    "red card",
+    "accumulated",
+    "disciplinary",
+    "sent off",
 }
 
 _TRANSFER_KEYWORDS = {
-    "transfer", "signing", "signed", "deal", "fee",
-    "bid", "offer", "contract", "loan",
+    "transfer",
+    "signing",
+    "signed",
+    "deal",
+    "fee",
+    "bid",
+    "offer",
+    "contract",
+    "loan",
 }
 
 _RSS_FEEDS = [
@@ -33,11 +60,11 @@ _RSS_FEEDS = [
 
 @dataclass
 class RawArticle:
-    title:       str = ""
+    title: str = ""
     description: str = ""
-    published:   str = ""
-    source:      str = ""
-    lang:        str = "en"
+    published: str = ""
+    source: str = ""
+    lang: str = "en"
 
     @property
     def full_text(self) -> str:
@@ -49,7 +76,6 @@ class RawArticle:
 
 
 class NewsCollector(BaseCollector):
-
     RATE_LIMIT_PER_MINUTE = 30
 
     def __init__(self, config):
@@ -61,6 +87,7 @@ class NewsCollector(BaseCollector):
     def _load_vader():
         try:
             from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
             return SentimentIntensityAnalyzer()
         except ImportError:
             logger.warning("vaderSentiment не установлен")
@@ -74,6 +101,7 @@ class NewsCollector(BaseCollector):
             return round((scores["compound"] + 1) / 2 * 100, 1)
         try:
             from textblob import TextBlob
+
             return round((TextBlob(text).sentiment.polarity + 1) / 2 * 100, 1)
         except Exception:
             return 50.0
@@ -88,23 +116,28 @@ class NewsCollector(BaseCollector):
 
         if not articles:
             result = {
-                "team": team_name, "articles_count": 0,
-                "sentiment_score": 50.0, "sentiment_label": "😐 Нейтральный",
-                "has_injuries": False, "has_suspensions": False,
-                "has_transfers": False, "key_topics": [],
-                "injury_players": [], "suspended_players": [],
+                "team": team_name,
+                "articles_count": 0,
+                "sentiment_score": 50.0,
+                "sentiment_label": "😐 Нейтральный",
+                "has_injuries": False,
+                "has_suspensions": False,
+                "has_transfers": False,
+                "key_topics": [],
+                "injury_players": [],
+                "suspended_players": [],
             }
             self._cache_set(cache_key, result)
             return result
 
         sentiment = self._aggregate_sentiment(articles)
-        events    = self._extract_events(articles)
+        events = self._extract_events(articles)
 
         result = {
-            "team":              team_name,
-            "articles_count":    len(articles),
-            "sentiment_score":   sentiment,
-            "sentiment_label":   self._sentiment_label(sentiment),
+            "team": team_name,
+            "articles_count": len(articles),
+            "sentiment_score": sentiment,
+            "sentiment_label": self._sentiment_label(sentiment),
             **events,
         }
         self._cache_set(cache_key, result)
@@ -131,17 +164,21 @@ class NewsCollector(BaseCollector):
     def _fetch_gnews(self, team_name: str) -> List[RawArticle]:
         resp = self.get(
             "https://gnews.io/api/v4/search",
-            params={"q": f"{team_name} football", "lang": "en",
-                    "max": 10, "token": self.config.GNEWS_KEY},
+            params={
+                "q": f"{team_name} football",
+                "lang": "en",
+                "max": 10,
+                "token": self.config.GNEWS_KEY,
+            },
         )
         if resp is None or resp.status_code != 200:
             return []
         return [
             RawArticle(
-                title       = a.get("title", ""),
-                description = a.get("description", ""),
-                published   = a.get("publishedAt", ""),
-                source      = a.get("source", {}).get("name", "GNews"),
+                title=a.get("title", ""),
+                description=a.get("description", ""),
+                published=a.get("publishedAt", ""),
+                source=a.get("source", {}).get("name", "GNews"),
             )
             for a in resp.json().get("articles", [])
         ]
@@ -149,18 +186,22 @@ class NewsCollector(BaseCollector):
     def _fetch_newsapi(self, team_name: str) -> List[RawArticle]:
         resp = self.get(
             "https://newsapi.org/v2/everything",
-            params={"q": team_name, "sortBy": "publishedAt",
-                    "pageSize": 10, "language": "en",
-                    "apiKey": self.config.NEWS_API_KEY},
+            params={
+                "q": team_name,
+                "sortBy": "publishedAt",
+                "pageSize": 10,
+                "language": "en",
+                "apiKey": self.config.NEWS_API_KEY,
+            },
         )
         if resp is None or resp.status_code != 200:
             return []
         return [
             RawArticle(
-                title       = a.get("title", ""),
-                description = a.get("description", ""),
-                published   = a.get("publishedAt", ""),
-                source      = a.get("source", {}).get("name", "NewsAPI"),
+                title=a.get("title", ""),
+                description=a.get("description", ""),
+                published=a.get("publishedAt", ""),
+                source=a.get("source", {}).get("name", "NewsAPI"),
             )
             for a in resp.json().get("articles", [])
         ]
@@ -178,13 +219,17 @@ class NewsCollector(BaseCollector):
                 continue
             for item in root.findall(".//item"):
                 title = item.findtext("title", "") or ""
-                desc  = item.findtext("description", "") or ""
+                desc = item.findtext("description", "") or ""
                 if team_lower not in title.lower() and team_lower not in desc.lower():
                     continue
-                articles.append(RawArticle(
-                    title=title, description=desc,
-                    published=item.findtext("pubDate", ""), source="RSS",
-                ))
+                articles.append(
+                    RawArticle(
+                        title=title,
+                        description=desc,
+                        published=item.findtext("pubDate", ""),
+                        source="RSS",
+                    )
+                )
         return articles
 
     def _aggregate_sentiment(self, articles: List[RawArticle]) -> float:
@@ -226,9 +271,12 @@ class NewsCollector(BaseCollector):
             key_topics.append("📋 Трансферные слухи")
 
         return {
-            "has_injuries": has_injuries, "has_suspensions": has_suspensions,
-            "has_transfers": has_transfers, "injury_players": injury_players,
-            "suspended_players": suspended_players, "key_topics": key_topics,
+            "has_injuries": has_injuries,
+            "has_suspensions": has_suspensions,
+            "has_transfers": has_transfers,
+            "injury_players": injury_players,
+            "suspended_players": suspended_players,
+            "key_topics": key_topics,
         }
 
     @staticmethod
@@ -245,8 +293,13 @@ class NewsCollector(BaseCollector):
 
     @staticmethod
     def _sentiment_label(score: float) -> str:
-        if   score >= 70: return "😊 Позитивный"
-        elif score >= 58: return "🙂 Умеренно позитивный"
-        elif score >= 42: return "😐 Нейтральный"
-        elif score >= 30: return "😟 Умеренно негативный"
-        else:             return "😞 Негативный"
+        if score >= 70:
+            return "😊 Позитивный"
+        elif score >= 58:
+            return "🙂 Умеренно позитивный"
+        elif score >= 42:
+            return "😐 Нейтральный"
+        elif score >= 30:
+            return "😟 Умеренно негативный"
+        else:
+            return "😞 Негативный"

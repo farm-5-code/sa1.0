@@ -1,58 +1,71 @@
-"""
-Sport Analyzer — Streamlit Dashboard (incremental build)
-
-Правило сборки:
-- Ты вставляешь следующий блок кода ВСЕГДА в самый конец файла.
-- Мы не правим середину, не ищем/заменяем.
-"""
+"""Sport Analyzer — Streamlit dashboard."""
 
 from __future__ import annotations
 
 import json
 import logging
 import sqlite3
-from datetime import datetime, date
-from typing import Any, Dict
+from datetime import date, datetime, timedelta
+from typing import Any
 
 import pandas as pd
 import streamlit as st
 
-from sport_analyzer.config.settings import Config
-from sport_analyzer.collectors.sports_collector import SportsCollector
-from sport_analyzer.collectors.api_sports_collector import ApiSportsCollector
-from sport_analyzer.collectors.weather_collector import WeatherCollector
-from sport_analyzer.collectors.news_collector import NewsCollector
 from sport_analyzer.analyzers.match_analyzer import MatchAnalyzer
+from sport_analyzer.collectors.api_sports_collector import ApiSportsCollector
+from sport_analyzer.collectors.news_collector import NewsCollector
+from sport_analyzer.collectors.sports_collector import SportsCollector
+from sport_analyzer.collectors.weather_collector import WeatherCollector
+from sport_analyzer.config.settings import Config
 from sport_analyzer.database.migrations import run_migrations
 from sport_analyzer.utils.team_normalizer import normalize_team_name
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("sport_analyzer.dashboard")
 
+PAGES = [
+    "Анализ",
+    "Расписание",
+    "История",
+    "Opportunities",
+    "Insights",
+    "Сигналы",
+    "Диагностика",
+]
+SPORTS = ["Футбол", "Баскетбол"]
 
-# ---------- STATE ----------
-def init_state():
+TOP_LEAGUE_KEYWORDS = {
+    "premier league",
+    "la liga",
+    "serie a",
+    "bundesliga",
+    "ligue 1",
+    "champions league",
+    "europa league",
+    "europa conference league",
+}
+
+
+def init_state() -> None:
     st.session_state.setdefault("result", {})
     st.session_state.setdefault("last_error", "")
     st.session_state.setdefault("last_run_at", "")
 
 
-# ---------- DB ----------
-def ensure_db(path: str):
-    # project migrations (safe)
+def ensure_db(path: str) -> None:
     try:
         run_migrations(path)
-    except Exception as e:
-        logger.exception("run_migrations failed: %s", e)
+    except Exception as exc:  # pragma: no cover
+        logger.exception("run_migrations failed: %s", exc)
 
-    # minimal table for history
     try:
-        with sqlite3.connect(path, timeout=10) as c:
-            c.execute(
+        with sqlite3.connect(path, timeout=10) as conn:
+            conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS analyses(
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     created_at TEXT DEFAULT (datetime('now')),
+                    sport TEXT DEFAULT 'football',
                     match TEXT,
                     datetime TEXT,
                     prediction TEXT,
@@ -61,61 +74,78 @@ def ensure_db(path: str):
                 )
                 """
             )
-            c.commit()
-    except Exception as e:
-        logger.exception("ensure_db failed: %s", e)
+            cols = [
+                r[1] for r in conn.execute("PRAGMA table_info(analyses)").fetchall()
+            ]
+            if "sport" not in cols:
+                conn.execute(
+                    "ALTER TABLE analyses ADD COLUMN sport TEXT DEFAULT 'football'"
+                )
+            conn.commit()
+    except Exception as exc:  # pragma: no cover
+        logger.exception("ensure_db failed: %s", exc)
 
 
-def save_analysis(path: str, result: Dict[str, Any]):
+def save_analysis(path: str, result: dict[str, Any], sport: str) -> None:
     try:
-        match = result.get("match") or f"{result.get('home_team','')} vs {result.get('away_team','')}"
-        dt = str(result.get("datetime", ""))
-        pred = str(result.get("best_pick", result.get("prediction", "")))
-        conf = float(result.get("confidence", 0.0) or 0.0)
+        match = result.get("match") or (
+            f"{result.get('home_team', '')} vs {result.get('away_team', '')}"
+        )
+        dt_value = str(result.get("datetime", ""))
+        prediction = str(result.get("best_pick", result.get("prediction", "")))
+        confidence = float(result.get("confidence", 0.0) or 0.0)
         raw = json.dumps(result, ensure_ascii=False)
 
-        with sqlite3.connect(path, timeout=10) as c:
-            c.execute(
+        with sqlite3.connect(path, timeout=10) as conn:
+            conn.execute(
                 """
-                INSERT INTO analyses(match, datetime, prediction, confidence, analysis_json)
-                VALUES(?,?,?,?,?)
+                INSERT INTO analyses(sport, match, datetime, prediction, confidence, analysis_json)
+                VALUES(?,?,?,?,?,?)
                 """,
-                (match, dt, pred, conf, raw),
+                (sport, match, dt_value, prediction, confidence, raw),
             )
-            c.commit()
-    except Exception as e:
-        logger.exception("save_analysis failed: %s", e)
+            conn.commit()
+    except Exception as exc:  # pragma: no cover
+        logger.exception("save_analysis failed: %s", exc)
 
 
 def load_analyses(path: str, limit: int = 300) -> pd.DataFrame:
     try:
-        with sqlite3.connect(path, timeout=10) as c:
-            return pd.read_sql_query(
-                f"""
+        with sqlite3.connect(path, timeout=10) as conn:
+            cols = [
+                r[1] for r in conn.execute("PRAGMA table_info(analyses)").fetchall()
+            ]
+            if "sport" in cols:
+                query = """
+                SELECT id, created_at, sport, match, datetime, prediction, confidence
+                FROM analyses
+                ORDER BY id DESC
+                LIMIT ?
+                """
+            else:
+                query = """
                 SELECT id, created_at, match, datetime, prediction, confidence
                 FROM analyses
                 ORDER BY id DESC
-                LIMIT {int(limit)}
-                """,
-                c,
-            )
-    except Exception as e:
-        logger.exception("load_analyses failed: %s", e)
+                LIMIT ?
+                """
+            return pd.read_sql_query(query, conn, params=(int(limit),))
+    except Exception as exc:  # pragma: no cover
+        logger.exception("load_analyses failed: %s", exc)
         return pd.DataFrame()
 
 
-# ---------- UI helpers ----------
-def render_result(result: Dict[str, Any]):
+def render_result(result: dict[str, Any]) -> None:
     if not result:
-        st.info("Пока нет результата. Запусти анализ.")
+        st.info("Пока нет результата. Запустите анализ.")
         return
 
     home = str(result.get("home_team", "Home"))
     away = str(result.get("away_team", "Away"))
-    conf = float(result.get("confidence", 0.0) or 0.0)
+    confidence = float(result.get("confidence", 0.0) or 0.0)
 
     st.markdown(f"## 🧾 Результат: **{home} vs {away}**")
-    st.metric("Уверенность", f"{conf:.1f}%")
+    st.metric("Уверенность", f"{confidence:.1f}%")
 
     probs = result.get("final_probs") or {}
     if isinstance(probs, dict) and probs:
@@ -130,40 +160,163 @@ def render_result(result: Dict[str, Any]):
             st.write("✈️ Away")
             st.progress(float(probs.get("away_win", 0.0) or 0.0))
 
-    recs = result.get("recommendations") or []
-    if recs:
+    recommendations = result.get("recommendations") or []
+    if recommendations:
         with st.expander("💡 Рекомендации", expanded=True):
-            for r in recs:
-                st.write(f"• {r}")
+            for recommendation in recommendations:
+                st.write(f"• {recommendation}")
 
-    with st.expander("🔎 Raw (debug)", expanded=False):
+    with st.expander("🔎 Raw (debug)"):
         st.json(result)
 
 
-# ---------- PAGES (stubs for now) ----------
-def page_analyze(analyzer: MatchAnalyzer, sports: SportsCollector, cfg: Config, api: ApiSportsCollector):
-    st.title("🏆 Анализ (скелет)")
-    st.caption("Дальше добавим выбор матча, odds, value и т.д.")
+def _league_is_top(league_name: str) -> bool:
+    raw = (league_name or "").strip().lower()
+    return any(key in raw for key in TOP_LEAGUE_KEYWORDS)
 
-    home = st.text_input("Home", "Arsenal")
-    away = st.text_input("Away", "Chelsea")
-    match_date = st.date_input("Дата", value=date.today())
-    match_time = st.time_input("Время (UTC)", value=datetime.utcnow().time())
+
+def _collect_upcoming_football_matches(
+    sports: SportsCollector,
+    api: ApiSportsCollector,
+    days: int,
+    include_minor: bool,
+) -> list[dict[str, Any]]:
+    if api.is_configured():
+        rows: list[dict[str, Any]] = []
+        base_day = datetime.utcnow().date()
+        for i in range(days):
+            day = (base_day + timedelta(days=i)).isoformat()
+            for m in api.get_fixtures_by_date(day, timezone="UTC", use_cache=True):
+                league_name = str(m.get("league") or "")
+                if not include_minor and not _league_is_top(league_name):
+                    continue
+                rows.append(
+                    {
+                        "id": m.get("fixture_id"),
+                        "date": m.get("utcDate"),
+                        "competition": league_name,
+                        "home_team": m.get("home_team"),
+                        "away_team": m.get("away_team"),
+                        "home_team_id": m.get("home_team_id"),
+                        "away_team_id": m.get("away_team_id"),
+                    }
+                )
+        return rows
+
+    rows = sports.get_matches(days_ahead=days) or []
+    if include_minor:
+        return rows
+    return [m for m in rows if _league_is_top(str(m.get("competition") or ""))]
+
+
+def _collect_upcoming_basketball_matches(days: int) -> list[dict[str, Any]]:
+    try:
+        from nba_api.stats.endpoints import scoreboardv2
+        from nba_api.stats.static import teams
+    except Exception as exc:  # pragma: no cover
+        logger.warning("nba_api unavailable: %s", exc)
+        return []
+
+    team_map = {int(t["id"]): str(t["full_name"]) for t in teams.get_teams()}
+    rows: list[dict[str, Any]] = []
+    base_day = datetime.utcnow().date()
+
+    for i in range(days):
+        d = base_day + timedelta(days=i)
+        game_date = d.strftime("%m/%d/%Y")
+        try:
+            sb = scoreboardv2.ScoreboardV2(game_date=game_date)
+            headers = sb.game_header.get_dict().get("data", [])
+        except Exception as exc:
+            logger.warning("NBA scoreboard failed for %s: %s", game_date, exc)
+            continue
+
+        for g in headers:
+            home_id = int(g[6]) if g[6] is not None else None
+            away_id = int(g[7]) if g[7] is not None else None
+            status = str(g[4] or "")
+            rows.append(
+                {
+                    "id": g[2],
+                    "date": str(g[0]),
+                    "competition": "NBA",
+                    "home_team": team_map.get(home_id or -1, str(home_id or "")),
+                    "away_team": team_map.get(away_id or -1, str(away_id or "")),
+                    "home_team_id": home_id,
+                    "away_team_id": away_id,
+                    "status": status,
+                }
+            )
+
+    return rows
+
+
+def _analyze_basketball_match(home: str, away: str, match_dt: str) -> dict[str, Any]:
+    return {
+        "sport": "basketball",
+        "home_team": home,
+        "away_team": away,
+        "datetime": match_dt,
+        "prediction": "Победа будет определена после загрузки расширенной NBA-статистики",
+        "best_pick": "Lean: Home",
+        "confidence": 50.0,
+        "recommendations": [
+            "🏀 Баскетбольный модуль включён (beta).",
+            "📊 Добавим продвинутый расчёт (pace/ORtg/DRtg/injuries) в следующих итерациях.",
+        ],
+    }
+
+
+def page_analyze(analyzer: MatchAnalyzer, cfg: Config, selected_sport: str) -> None:
+    st.title(f"🏆 Анализ матча ({selected_sport})")
+
+    home = st.text_input(
+        "Home", "Arsenal" if selected_sport == "Футбол" else "Boston Celtics"
+    )
+    away = st.text_input(
+        "Away", "Chelsea" if selected_sport == "Футбол" else "Miami Heat"
+    )
+    city = st.text_input("Город (опционально)", "")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        match_date = st.date_input("Дата", value=date.today())
+    with c2:
+        match_time = st.time_input("Время (UTC)", value=datetime.utcnow().time())
+
+    neutral = st.checkbox(
+        "Нейтральное поле", value=False, disabled=selected_sport != "Футбол"
+    )
 
     if st.button("🚀 Анализировать", type="primary"):
         st.session_state["last_error"] = ""
         try:
-            result = analyzer.analyze_match(
-                home_team=normalize_team_name(home),
-                away_team=normalize_team_name(away),
-                match_datetime=f"{match_date}T{match_time}:00",
+            match_dt = (
+                datetime.combine(match_date, match_time)
+                .replace(microsecond=0)
+                .isoformat()
             )
+            if selected_sport == "Футбол":
+                kwargs: dict[str, Any] = {
+                    "home_team": normalize_team_name(home),
+                    "away_team": normalize_team_name(away),
+                    "match_datetime": match_dt,
+                    "neutral_field": neutral,
+                }
+                if city.strip():
+                    kwargs["city"] = city.strip()
+                result = analyzer.analyze_match(**kwargs)
+                sport_key = "football"
+            else:
+                result = _analyze_basketball_match(home.strip(), away.strip(), match_dt)
+                sport_key = "basketball"
+
             st.session_state["result"] = result
             st.session_state["last_run_at"] = datetime.utcnow().isoformat()
-            save_analysis(cfg.DB_PATH, result)
-        except Exception as e:
-            st.session_state["last_error"] = str(e)
-            logger.exception("analyze failed: %s", e)
+            save_analysis(cfg.DB_PATH, result, sport=sport_key)
+        except Exception as exc:
+            st.session_state["last_error"] = str(exc)
+            logger.exception("analyze failed: %s", exc)
 
     if st.session_state.get("last_error"):
         st.error(st.session_state["last_error"])
@@ -171,18 +324,190 @@ def page_analyze(analyzer: MatchAnalyzer, sports: SportsCollector, cfg: Config, 
     render_result(st.session_state.get("result") or {})
 
 
-def page_schedule(sports: SportsCollector):
-    st.title("📅 Расписание (скоро)")
-    st.info("Добавим в следующей части.")
+def page_schedule(
+    sports: SportsCollector, api: ApiSportsCollector, selected_sport: str
+) -> None:
+    st.title(f"📅 Расписание ({selected_sport})")
+
+    if selected_sport == "Футбол":
+        c1, c2 = st.columns(2)
+        with c1:
+            days = st.slider("Дней вперёд", 1, 14, 7)
+        with c2:
+            include_minor = st.checkbox("Показывать небольшие турниры", value=True)
+
+        with st.spinner("Загружаем матчи…"):
+            matches = _collect_upcoming_football_matches(
+                sports, api, days=days, include_minor=include_minor
+            )
+    else:
+        days = st.slider("Дней вперёд", 1, 10, 3)
+        with st.spinner("Загружаем NBA матчи…"):
+            matches = _collect_upcoming_basketball_matches(days=days)
+
+    if not matches:
+        st.warning("Матчи не найдены. Проверьте ключи API и доступ к сети.")
+        return
+
+    leagues = sorted(
+        {str(m.get("competition") or "") for m in matches if m.get("competition")}
+    )
+    selected_leagues = st.multiselect(
+        "Фильтр турниров", options=leagues, default=leagues[:12]
+    )
+
+    filtered = [
+        m
+        for m in matches
+        if not selected_leagues or str(m.get("competition") or "") in selected_leagues
+    ]
+    df = pd.DataFrame(filtered)
+    if "date" in df.columns:
+        df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime(
+            "%d.%m %H:%M"
+        )
+    st.caption(f"Найдено матчей: {len(filtered)}")
+    st.dataframe(df, use_container_width=True)
 
 
-def page_history(cfg: Config):
-    st.title("🕘 История (скоро)")
-    st.info("Добавим в следующей части.")
+def page_opportunities(
+    analyzer: MatchAnalyzer,
+    sports: SportsCollector,
+    api: ApiSportsCollector,
+    selected_sport: str,
+) -> None:
+    st.title(f"💎 Opportunities ({selected_sport})")
+
+    if selected_sport != "Футбол":
+        st.info(
+            "Для баскетбола сейчас доступен базовый скан матчей без продвинутого рейтинга."
+        )
+        days = st.slider("Окно (дней)", 1, 7, 2)
+        rows = _collect_upcoming_basketball_matches(days=days)
+        if not rows:
+            st.warning("NBA-матчи не удалось загрузить.")
+            return
+        df = pd.DataFrame(rows)
+        if "date" in df.columns:
+            df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime(
+                "%d.%m %H:%M"
+            )
+        st.dataframe(df, use_container_width=True)
+        return
+
+    st.caption("Авто-скан футбольных матчей с фильтрацией по турнирам и confidence.")
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        days = st.slider("Окно (дней)", 1, 7, 2)
+    with c2:
+        limit_matches = st.slider("Лимит матчей", 5, 80, 20)
+    with c3:
+        include_minor = st.checkbox("Включая небольшие турниры", value=True)
+
+    autoref = st.checkbox("Автообновление (30 сек)", value=False)
+    if autoref:
+        try:
+            from streamlit_autorefresh import st_autorefresh  # type: ignore
+
+            st_autorefresh(interval=30_000, key="opportunities_refresh")
+        except Exception:
+            st.warning(
+                "Пакет streamlit-autorefresh не установлен. "
+                "Используй кнопку «Запустить авто-скан» для ручного обновления."
+            )
+
+    if st.button("🚀 Запустить авто-скан", type="primary", use_container_width=True):
+        st.session_state["op_rows"] = None
+
+    cached = st.session_state.get("op_rows")
+    if cached is None:
+        with st.spinner("Сканируем матчи..."):
+            matches = _collect_upcoming_football_matches(
+                sports,
+                api,
+                days=days,
+                include_minor=include_minor,
+            )
+            matches = matches[:limit_matches]
+
+            rows: list[dict[str, Any]] = []
+            for m in matches:
+                home = str(m.get("home_team") or "")
+                away = str(m.get("away_team") or "")
+                if not home or not away:
+                    continue
+
+                try:
+                    res = analyzer.analyze_match(
+                        home_team=normalize_team_name(home),
+                        away_team=normalize_team_name(away),
+                        match_datetime=str(m.get("date") or ""),
+                        home_team_id=m.get("home_team_id"),
+                        away_team_id=m.get("away_team_id"),
+                        competition=str(m.get("competition") or ""),
+                    )
+                except Exception as exc:
+                    logger.warning("scan failed for %s vs %s: %s", home, away, exc)
+                    continue
+
+                rows.append(
+                    {
+                        "date": m.get("date"),
+                        "league": m.get("competition"),
+                        "match": f"{home} vs {away}",
+                        "prediction": res.get("best_pick")
+                        or res.get("prediction")
+                        or "",
+                        "confidence": float(res.get("confidence") or 0.0),
+                    }
+                )
+
+            rows.sort(key=lambda x: x["confidence"], reverse=True)
+            st.session_state["op_rows"] = rows
+            st.session_state["op_meta"] = datetime.utcnow().strftime(
+                "%Y-%m-%d %H:%M UTC"
+            )
+            cached = rows
+
+    if not cached:
+        st.info("Нет данных для сканирования. Измени фильтры и запусти скан ещё раз.")
+        return
+
+    threshold = st.slider("Мин. уверенность (%)", 40, 90, 55)
+    filtered = [r for r in cached if float(r.get("confidence") or 0.0) >= threshold]
+
+    leagues = sorted({str(r.get("league") or "") for r in filtered if r.get("league")})
+    selected_leagues = st.multiselect("Турниры", options=leagues, default=leagues[:10])
+    filtered = [
+        r
+        for r in filtered
+        if not selected_leagues or str(r.get("league") or "") in selected_leagues
+    ]
+
+    st.caption(
+        f"Последнее обновление: {st.session_state.get('op_meta', '—')} | матчей: {len(filtered)}"
+    )
+    out = pd.DataFrame(filtered)
+    if "date" in out.columns:
+        out["date"] = pd.to_datetime(out["date"], errors="coerce").dt.strftime(
+            "%d.%m %H:%M"
+        )
+    st.dataframe(out, use_container_width=True)
 
 
-def page_diagnostics(cfg: Config, api: ApiSportsCollector):
-    st.title("🧪 Диагностика (скелет)")
+def page_history(cfg: Config) -> None:
+    st.title("🕘 История анализов")
+    limit = st.slider("Последних записей", 10, 500, 100, step=10)
+    df = load_analyses(cfg.DB_PATH, limit=limit)
+    if df.empty:
+        st.info("История пока пустая.")
+        return
+    st.dataframe(df, use_container_width=True)
+
+
+def page_diagnostics(cfg: Config, api: ApiSportsCollector) -> None:
+    st.title("🧪 Диагностика")
     st.write(f"DB_PATH: `{cfg.DB_PATH}`")
     st.write("API-Sports configured:", "✅" if api.is_configured() else "❌")
     st.write("Last run:", st.session_state.get("last_run_at") or "—")
@@ -190,8 +515,17 @@ def page_diagnostics(cfg: Config, api: ApiSportsCollector):
         st.code(st.session_state["last_error"])
 
 
-# ---------- MAIN ----------
-def main():
+def page_insights() -> None:
+    st.title("🧠 Insights")
+    st.info("Раздел в разработке.")
+
+
+def page_signals(_api: ApiSportsCollector) -> None:
+    st.title("📡 Сигналы")
+    st.info("Раздел в разработке.")
+
+
+def main() -> None:
     init_state()
 
     cfg = Config()
@@ -201,994 +535,23 @@ def main():
     api = ApiSportsCollector(cfg)
     weather = WeatherCollector(cfg)
     news = NewsCollector(cfg)
-
-    # Важно: не передаём xg= (мы уже ловили ошибку), пока не согласуем сигнатуру
     analyzer = MatchAnalyzer(cfg, sports=sports, weather=weather, news=news)
 
     st.sidebar.title("🏆 Sport Analyzer")
+    selected_sport = st.sidebar.selectbox("Вид спорта", SPORTS)
+    page = st.sidebar.radio("Раздел", PAGES)
 
     if page == "Анализ":
-        page_analyze(analyzer, sports, cfg, api)
-    elif page == "Insights":
-        page_insights()
-    elif page == "Opportunities":
-        page_opportunities(analyzer, sports)
-    elif page == "Сигналы":
-        page_signals(api)
+        page_analyze(analyzer, cfg, selected_sport)
     elif page == "Расписание":
-        page_schedule(sports)
+        page_schedule(sports, api, selected_sport)
     elif page == "История":
         page_history(cfg)
-    else:
-        page_diagnostics(cfg, api)
-    
-# ============================================================
-# STEP 2 EXTENSION — Schedule + History implementation
-# (вставляется В КОНЕЦ файла, ничего выше менять не нужно)
-# ============================================================
-
-
-def page_schedule(sports: SportsCollector):
-    st.title("📅 Расписание")
-
-    days = st.slider("Дней вперёд", 1, 14, 7)
-
-    with st.spinner("Загружаем матчи…"):
-        matches = sports.get_matches(days_ahead=days) or []
-
-    if not matches:
-        st.warning("Матчи не найдены. Проверь FOOTBALL_DATA_KEY.")
-        return
-
-    df = pd.DataFrame(matches)
-
-    # best-effort formatting
-    for col in ["date", "utcDate"]:
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col], errors="coerce").dt.strftime("%d.%m %H:%M")
-
-    st.dataframe(df, use_container_width=True, hide_index=True)
-
-
-
-def page_history(cfg: Config):
-    st.title("🕘 История анализов")
-
-    limit = st.slider("Сколько записей показать", 50, 1000, 300, step=50)
-
-    df = load_analyses(cfg.DB_PATH, limit=int(limit))
-
-    if df.empty:
-        st.info("История пока пустая.")
-        return
-
-    st.dataframe(df, use_container_width=True, hide_index=True)
-
-    # просмотр raw json результата
-    with st.expander("📦 Открыть сохранённый результат", expanded=False):
-        pick_id = st.number_input("ID анализа", value=int(df.iloc[0]["id"]), step=1)
-
-        try:
-            with sqlite3.connect(cfg.DB_PATH) as c:
-                row = c.execute(
-                    "SELECT analysis_json FROM analyses WHERE id=?",
-                    (int(pick_id),),
-                ).fetchone()
-
-            if not row:
-                st.warning("Запись не найдена.")
-                return
-
-            st.json(json.loads(row[0]))
-
-        except Exception as e:
-            st.error(str(e))
-
-# ============================================================
-# STEP 3 — SIGNALS ENGINE
-# ============================================================
-
-def _movement_from_history(df_hist: pd.DataFrame, window_min: int) -> pd.DataFrame:
-    if df_hist.empty:
-        return pd.DataFrame()
-
-    df = df_hist.copy()
-    df["ts"] = pd.to_numeric(df["ts"], errors="coerce")
-    df = df.dropna(subset=["ts"])
-
-    if df.empty:
-        return pd.DataFrame()
-
-    latest_ts = df["ts"].max()
-    cutoff = latest_ts - window_min * 60
-
-    base = df[df["ts"] >= cutoff].copy()
-    if base.empty:
-        return pd.DataFrame()
-
-    base = base.sort_values("ts")
-
-    grp = ["market", "selection"]
-
-    first = base.groupby(grp, as_index=False).first()
-    last = base.groupby(grp, as_index=False).last()
-
-    merged = first.merge(last, on=grp, suffixes=("_start", "_last"))
-
-    for col in ["best_odd", "avg_odd"]:
-        if f"{col}_start" in merged and f"{col}_last" in merged:
-            merged[f"{col}_chg_pct"] = (
-                merged[f"{col}_last"].astype(float)
-                / (merged[f"{col}_start"].astype(float) + 1e-9)
-                - 1
-            ) * 100
-
-    merged["steam_score"] = (-merged.get("best_odd_chg_pct", 0)).clip(lower=0)
-
-    return merged
-
-
-def page_signals(api: ApiSportsCollector):
-    st.title("📡 Сигналы (движение линии)")
-
-    if not api.is_configured():
-        st.error("API_FOOTBALL_KEY не задан в Secrets.")
-        return
-
-    date_sel = st.date_input("Дата", value=datetime.utcnow().date())
-
-    with st.spinner("Загрузка fixtures…"):
-        fixtures = api.get_fixtures_by_date(
-            date_sel.strftime("%Y-%m-%d"),
-            timezone="UTC",
-            use_cache=True,
-        )
-
-    if not fixtures:
-        st.warning("Fixtures не найдены.")
-        return
-
-    df_fx = pd.DataFrame(fixtures)
-    df_fx["match"] = df_fx["home_team"] + " — " + df_fx["away_team"]
-
-    options = {
-        f"{r['league']} • {r['match']}": r["fixture_id"]
-        for _, r in df_fx.iterrows()
-    }
-
-    label = st.selectbox("Матч", list(options.keys()))
-    fixture_id = options[label]
-
-    if st.button("📸 Снять snapshot"):
-        odds = api.get_odds_for_fixture(int(fixture_id), use_cache=False)
-        api.save_snapshot_from_odds(int(fixture_id), odds)
-        st.success("Snapshot сохранён")
-
-    hist = api.get_snapshot_history(int(fixture_id), hours=24)
-
-    if not hist:
-        st.info("История snapshot пока пустая.")
-        return
-
-    dfh = pd.DataFrame(hist)
-
-    frames = []
-    for w in (10, 30, 60):
-        frames.append(_movement_from_history(dfh, w))
-
-    dfm = pd.concat(frames, ignore_index=True)
-
-    if dfm.empty:
-        st.info("Недостаточно snapshot.")
-        return
-
-    st.dataframe(
-        dfm.sort_values("steam_score", ascending=False),
-        use_container_width=True,
-        hide_index=True,
-    )
-# ============================================================
-# STEP 4 — OPPORTUNITIES (48h) without API-Sports
-# ============================================================
-
-def _safe_prob(x: Any) -> float:
-    try:
-        v = float(x)
-    except Exception:
-        return 0.0
-    if v != v:  # NaN
-        return 0.0
-    return max(0.0, min(1.0, v))
-
-
-def _pick_from_probs(home: float, draw: float, away: float):
-    m = max(home, draw, away)
-    if m == home:
-        return "Home", m
-    if m == draw:
-        return "Draw", m
-    return "Away", m
-
-
-def page_opportunities(analyzer: MatchAnalyzer, sports: SportsCollector):
-    st.title("💎 Opportunities (48h)")
-    st.caption("Список ближайших матчей и сильнейшие прогнозы по модели (без odds / без API-Sports).")
-
-    days = st.slider("Дней вперёд", 1, 7, 2)
-    top_n = st.slider("Показать топ", 5, 50, 15)
-
-    with st.spinner("Загружаю матчи…"):
-        matches = sports.get_matches(days_ahead=int(days)) or []
-
-    if not matches:
-        st.warning("Матчи не найдены. Проверь FOOTBALL_DATA_KEY.")
-        return
-
-    df = pd.DataFrame(matches)
-    if df.empty:
-        st.warning("Пустой список матчей.")
-        return
-
-    # Best effort columns
-    # expecting: home_team, away_team, home_team_id, away_team_id, date/utcDate
-    rows = []
-    prog = st.progress(0.0)
-    total = len(df)
-
-    for i, r in enumerate(df.to_dict("records"), start=1):
-        prog.progress(i / max(1, total))
-
-        home_raw = str(r.get("home_team", "") or "")
-        away_raw = str(r.get("away_team", "") or "")
-        if not home_raw or not away_raw:
-            continue
-
-        home = normalize_team_name(home_raw)
-        away = normalize_team_name(away_raw)
-
-        match_dt = r.get("utcDate") or r.get("date") or ""
-        match_dt = str(match_dt)
-
-        h_id = r.get("home_team_id") or r.get("homeTeamId") or 0
-        a_id = r.get("away_team_id") or r.get("awayTeamId") or 0
-
-        try:
-            res = analyzer.analyze_match(
-                home_team=home,
-                away_team=away,
-                match_datetime=match_dt if match_dt else datetime.utcnow().isoformat(),
-                home_team_id=int(h_id) if int(h_id) else None,
-                away_team_id=int(a_id) if int(a_id) else None,
-            )
-        except Exception:
-            # не валим весь список из-за одного матча
-            continue
-
-        probs = res.get("final_probs") or {}
-        ph = _safe_prob(probs.get("home_win", 0))
-        pdw = _safe_prob(probs.get("draw", 0))
-        pa = _safe_prob(probs.get("away_win", 0))
-
-        pick, pmax = _pick_from_probs(ph, pdw, pa)
-        conf = float(res.get("confidence", pmax * 100) or (pmax * 100))
-
-        rows.append({
-            "datetime": match_dt,
-            "league": r.get("competition") or r.get("league") or "",
-            "home": home_raw,
-            "away": away_raw,
-            "pick": pick,
-            "p_pick": round(pmax, 4),
-            "confidence_%": round(conf, 1),
-            "p_home": round(ph, 4),
-            "p_draw": round(pdw, 4),
-            "p_away": round(pa, 4),
-        })
-
-    prog.empty()
-
-    out = pd.DataFrame(rows)
-    if out.empty:
-        st.info("Не удалось построить прогнозы по матчам (возможно, не хватает данных/ключа).")
-        return
-
-    out = out.sort_values(["confidence_%", "p_pick"], ascending=False).head(int(top_n))
-    st.dataframe(out, use_container_width=True, hide_index=True)
-
-    st.caption("Подсказка: кликай по строкам/фильтруй таблицу — это живой рейтинг силы прогнозов.")
-    # ============================================================
-# STEP 5 — MODEL INSIGHTS
-# ============================================================
-
-import matplotlib.pyplot as plt
-
-
-def page_insights():
-    st.title("🧠 Model Insights")
-
-    result = st.session_state.get("result")
-
-    if not result:
-        st.info("Сначала выполни анализ матча.")
-        return
-
-    probs = result.get("final_probs") or {}
-
-    home = float(probs.get("home_win", 0))
-    draw = float(probs.get("draw", 0))
-    away = float(probs.get("away_win", 0))
-
-    st.subheader("Вероятности исходов")
-
-    fig = plt.figure()
-    plt.bar(["Home", "Draw", "Away"], [home, draw, away])
-    plt.ylabel("Probability")
-
-    st.pyplot(fig, clear_figure=True)
-
-    st.subheader("Уверенность модели")
-
-    conf = float(result.get("confidence", 0))
-    st.metric("Confidence", f"{conf:.1f}%")
-
-    if conf > 60:
-        st.success("Высокая уверенность модели")
-    elif conf > 48:
-        st.warning("Средняя уверенность")
-    else:
-        st.error("Низкая уверенность")
-
-    recs = result.get("recommendations") or []
-
-    if recs:
-        st.subheader("Рекомендации")
-        for r in recs:
-            st.write("•", r)
-
-    # если анализатор отдаёт факторы — покажем
-    factors = result.get("factors") or result.get("model_factors")
-
-    if isinstance(factors, dict) and factors:
-        st.subheader("Факторы модели")
-        st.json(factors)
-
-# ============================================================
-# STEP 5 — INSIGHTS (Explainability)
-# ============================================================
-
-import matplotlib.pyplot as plt
-
-
-def page_insights():
-    st.title("🧠 Insights")
-
-    result = st.session_state.get("result") or {}
-    if not result:
-        st.info("Сначала запусти Анализ, чтобы появился результат.")
-        return
-
-    home_team = str(result.get("home_team", "Home"))
-    away_team = str(result.get("away_team", "Away"))
-    st.caption(f"{home_team} vs {away_team}")
-
-    probs = result.get("final_probs") or {}
-    p_home = float(probs.get("home_win", 0.0) or 0.0)
-    p_draw = float(probs.get("draw", 0.0) or 0.0)
-    p_away = float(probs.get("away_win", 0.0) or 0.0)
-
-    st.subheader("Вероятности 1X2")
-    fig, ax = plt.subplots()
-    ax.bar(["Home", "Draw", "Away"], [p_home, p_draw, p_away])
-    ax.set_ylabel("Probability")
-    st.pyplot(fig, clear_figure=True)
-    plt.close(fig)
-
-    conf = float(result.get("confidence", 0.0) or 0.0)
-    st.subheader("Уверенность")
-    st.metric("Confidence", f"{conf:.1f}%")
-    if conf >= 60:
-        st.success("Высокая уверенность модели")
-    elif conf >= 48:
-        st.warning("Средняя уверенность модели")
-    else:
-        st.info("Низкая уверенность модели")
-
-    recs = result.get("recommendations") or []
-    if recs:
-        st.subheader("Рекомендации")
-        for r in recs:
-            st.write("•", r)
-
-    # если в результатах есть какие-то факторы — покажем
-    factors = result.get("factors") or result.get("model_factors") or {}
-    if isinstance(factors, dict) and factors:
-        with st.expander("Факторы модели", expanded=False):
-            st.json(factors)
-
-    with st.expander("Raw result", expanded=False):
-        st.json(result)
-
-
-# ----------------- override MAIN with Insights tab -----------------
-
-def main():
-    init_state()
-
-    cfg = Config()
-    ensure_db(cfg.DB_PATH)
-
-    sports = SportsCollector(cfg)
-    api = ApiSportsCollector(cfg)
-    weather = WeatherCollector(cfg)
-    news = NewsCollector(cfg)
-
-    analyzer = MatchAnalyzer(cfg, sports=sports, weather=weather, news=news)
-
-    st.sidebar.title("🏆 Sport Analyzer")
-
-    # --- one-click navigation request (must be BEFORE radio) ---
-    if st.session_state.pop("goto_analysis", False):
-        st.session_state["main_navigation_radio"] = "🏆 Анализ"
-
-    page = st.sidebar.radio(
-        "Раздел",
-        [
-            "🏆 Анализ",
-            "⚡ Auto Scanner",
-            "🔥 Opportunities",
-            "🧠 Insights",
-            "📡 Сигналы",
-            "📅 Расписание",
-            "📚 История",
-            "🧪 Диагностика",
-        ],
-        index=0,
-        key="main_navigation_radio",
-    )
-
-    if page == "🏆 Анализ":
-        page_analyze(analyzer, sports, cfg, api)
-
-    elif page == "⚡ Auto Scanner":
-        page_auto_scanner()
-
-    elif page == "🔥 Opportunities":
-        page_opportunities(analyzer, sports)
-
-    elif page == "🧠 Insights":
+    elif page == "Opportunities":
+        page_opportunities(analyzer, sports, api, selected_sport)
+    elif page == "Insights":
         page_insights()
-
-    elif page == "📡 Сигналы":
+    elif page == "Сигналы":
         page_signals(api)
-
-    elif page == "📅 Расписание":
-        page_schedule(sports)
-
-    elif page == "📚 История":
-        page_history(cfg)
-
     else:
         page_diagnostics(cfg, api)
-
-# ============================================================
-# STEP 6 — AUTO SCANNER + TURBO CACHE (insert BEFORE last main())
-# ============================================================
-
-from datetime import timedelta
-
-
-@st.cache_resource
-def _services():
-    """
-    Heavy objects: config + collectors + analyzer.
-    Cached across reruns for speed.
-    """
-    cfg = Config()
-    sports = SportsCollector(cfg)
-    api = ApiSportsCollector(cfg)
-    weather = WeatherCollector(cfg)
-    news = NewsCollector(cfg)
-    analyzer = MatchAnalyzer(cfg, sports=sports, weather=weather, news=news)
-    return cfg, sports, api, analyzer
-
-
-@st.cache_data(ttl=30 * 60)
-def _cached_matches(days_ahead: int):
-    """
-    Cached fixtures list (football-data).
-    """
-    cfg, sports, api, analyzer = _services()
-    return sports.get_matches(days_ahead=int(days_ahead)) or []
-
-
-@st.cache_data(ttl=6 * 60 * 60)
-def _cached_analyze(
-    home: str,
-    away: str,
-    match_datetime: str,
-    home_id: int | None = None,
-    away_id: int | None = None,
-):
-    """
-    Cached analysis per match (keyed by inputs).
-    """
-    cfg, sports, api, analyzer = _services()
-    return analyzer.analyze_match(
-        home_team=normalize_team_name(home),
-        away_team=normalize_team_name(away),
-        match_datetime=match_datetime,
-        home_team_id=home_id,
-        away_team_id=away_id,
-    )
-
-
-def _prob_safe(x):
-    try:
-        v = float(x)
-    except Exception:
-        return 0.0
-    if v != v:
-        return 0.0
-    return max(0.0, min(1.0, v))
-
-
-def page_opportunities(analyzer, sports):
-    """
-    Override previous Opportunities with:
-    ✅ cached fixtures
-    ✅ cached analyze
-    ✅ auto-scan button
-    """
-    st.title("🔥 Opportunities — Auto Scanner")
-    st.caption("Авто-скан ближайших матчей и топ прогнозов по уверенности (кеш ускоряет повторные запуски).")
-
-    c1, c2, c3 = st.columns([1, 1, 1])
-    with c1:
-        days = st.slider("Дней вперёд", 1, 7, 2)
-    with c2:
-        top_n = st.slider("Топ матчей", 5, 50, 15)
-    with c3:
-        autoref = st.checkbox("Автообновление", value=False)
-
-    autoref = st.checkbox("Автообновление", value=False)
-
-    if autoref:
-        # Streamlit doesn't have st.autorefresh in v1.33.0.
-        # Use optional dependency if installed; otherwise just show a hint.
-        try:
-            from streamlit_autorefresh import st_autorefresh  # type: ignore
-            st_autorefresh(interval=30_000, key="auto_scan_refresh")
-        except Exception:
-            st.info("Автообновление недоступно (нет пакета streamlit-autorefresh). Обновляй страницу вручную.")
-        except Exception:
-            st.info("Автообновление недоступно (нет пакета streamlit-autorefresh). Обновляй страницу вручную.")
-        except Exception:
-            st.info("⏱ Автообновление недоступно (нет streamlit-autorefresh)")
-
-    # кешируем список матчей
-    matches = _cached_matches(int(days))
-    if not matches:
-        st.warning("Матчи не найдены. Проверь FOOTBALL_DATA_KEY.")
-        return
-
-    df = pd.DataFrame(matches)
-    if df.empty:
-        st.warning("Пустой список матчей.")
-        return
-
-    # Нажатие кнопки принудительно прогоняет анализ (даже если таблица уже есть)
-    run_scan = st.button("🚀 Запустить авто-скан", type="primary", use_container_width=True)
-
-    # Если уже есть результаты прошлого скана — показываем сразу (быстро)
-    cached_scan = st.session_state.get("auto_scan_rows")
-    cached_meta = st.session_state.get("auto_scan_meta")
-
-    if cached_scan and cached_meta and not run_scan:
-        st.info(f"Показаны результаты последнего скана: {cached_meta}")
-        out = pd.DataFrame(cached_scan)
-        st.dataframe(out.head(int(top_n)), use_container_width=True, hide_index=True)
-        return
-
-    if not run_scan:
-        st.info("Нажми «Запустить авто-скан», чтобы построить рейтинг матчей.")
-        return
-
-        rows = []
-    prog = st.progress(0.0)
-    total = len(df)
-
-    for i, r in enumerate(df.to_dict("records"), start=1):
-        prog.progress(i / max(1, total))
-
-        home = str(r.get("home_team") or r.get("homeTeam") or "").strip()
-        away = str(r.get("away_team") or r.get("awayTeam") or "").strip()
-        if not home or not away:
-            continue
-
-        match_dt = str(r.get("utcDate") or r.get("date") or "").strip()
-        if not match_dt:
-            match_dt = datetime.utcnow().isoformat()
-
-        h_id = r.get("home_team_id") or r.get("homeTeamId") or 0
-        a_id = r.get("away_team_id") or r.get("awayTeamId") or 0
-        h_id = int(h_id) if str(h_id).isdigit() else None
-        a_id = int(a_id) if str(a_id).isdigit() else None
-
-        try:
-            res = _cached_analyze(home, away, match_dt, h_id, a_id)
-        except Exception:
-            continue
-
-        probs = res.get("final_probs") or {}
-        ph = _prob_safe(probs.get("home_win", 0))
-        pdw = _prob_safe(probs.get("draw", 0))
-        pa = _prob_safe(probs.get("away_win", 0))
-
-        pick = "Home"
-        pmax = ph
-        if pdw > pmax:
-            pick, pmax = "Draw", pdw
-        if pa > pmax:
-            pick, pmax = "Away", pa
-
-        # confidence (%)
-        conf = float(res.get("confidence", pmax * 100) or (pmax * 100))
-
-        # edge — насколько лучший исход сильнее второго
-        probs_sorted = sorted([ph, pdw, pa], reverse=True)
-        p2 = probs_sorted[1] if len(probs_sorted) > 1 else 0.0
-        edge_pct = (pmax - p2) * 100.0
-
-        # общий score
-        score = 0.65 * conf + 0.35 * edge_pct
-
-        rows.append(
-            {
-                "datetime": match_dt,
-                "league": r.get("competition") or r.get("league") or "",
-                "home": home,
-                "away": away,
-                "pick": pick,
-                "score": round(score, 2),
-                "confidence_%": round(conf, 1),
-                "edge_%": round(edge_pct, 1),
-                "p_pick": round(pmax, 4),
-                "p_home": round(ph, 4),
-                "p_draw": round(pdw, 4),
-                "p_away": round(pa, 4),
-            }
-        )
-
-    prog.empty()
-
-    out = pd.DataFrame(rows)
-    if out.empty:
-        st.warning("Скан не дал результатов (возможно, не хватает данных/ключей).")
-        return
-
-    out = out.sort_values(["score", "confidence_%", "p_pick"], ascending=False)
-
-    # сохраним в session_state, чтобы при переключении вкладок не считать заново
-    st.session_state["auto_scan_rows"] = out.to_dict("records")
-    st.session_state["auto_scan_meta"] = (
-        f"{datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')} | days={days} | matches={len(out)}"
-    )
-
-    st.success("Скан завершён ✅")
-    st.dataframe(out.head(int(top_n)), use_container_width=True, hide_index=True)
-
-    with st.expander("💾 Очистить кеш скана", expanded=False):
-        if st.button("Очистить auto-scan кеш", use_container_width=True):
-            st.session_state.pop("auto_scan_rows", None)
-            st.session_state.pop("auto_scan_meta", None)
-            st.success("Очищено. Перезапусти скан.")
-# ============================================================
-# STEP 6.1 — Auto Scanner page (new route)
-# ============================================================
-
-def page_auto_scanner():
-    cfg, sports, api, analyzer = _services()
-    # используем уже кешированную реализацию
-    page_opportunities(analyzer, sports)
-# ============================================================
-# STEP 6.2 — DEMO FIXTURES (work without FOOTBALL_DATA_KEY)
-# ============================================================
-
-def _demo_matches(days_ahead: int = 2):
-    # Мини-набор для проверки Auto Scanner без ключей
-    now = datetime.utcnow()
-    base_dt = now.replace(minute=0, second=0, microsecond=0)
-
-    demo = [
-        {
-            "utcDate": (base_dt + timedelta(hours=6)).isoformat(),
-            "date": (base_dt + timedelta(hours=6)).isoformat(),
-            "competition": "DEMO • EPL",
-            "home_team": "Arsenal",
-            "away_team": "Chelsea",
-            "home_team_id": 0,
-            "away_team_id": 0,
-        },
-        {
-            "utcDate": (base_dt + timedelta(hours=10)).isoformat(),
-            "date": (base_dt + timedelta(hours=10)).isoformat(),
-            "competition": "DEMO • LaLiga",
-            "home_team": "Barcelona",
-            "away_team": "Real Madrid",
-            "home_team_id": 0,
-            "away_team_id": 0,
-        },
-        {
-            "utcDate": (base_dt + timedelta(hours=14)).isoformat(),
-            "date": (base_dt + timedelta(hours=14)).isoformat(),
-            "competition": "DEMO • Serie A",
-            "home_team": "Inter",
-            "away_team": "Juventus",
-            "home_team_id": 0,
-            "away_team_id": 0,
-        },
-        {
-            "utcDate": (base_dt + timedelta(hours=18)).isoformat(),
-            "date": (base_dt + timedelta(hours=18)).isoformat(),
-            "competition": "DEMO • Bundesliga",
-            "home_team": "Bayern Munich",
-            "away_team": "Borussia Dortmund",
-            "home_team_id": 0,
-            "away_team_id": 0,
-        },
-    ]
-
-    # Чуть “масштабируем” по days_ahead, чтобы не было всегда одно и то же
-    if int(days_ahead) >= 3:
-        demo.append(
-            {
-                "utcDate": (base_dt + timedelta(hours=30)).isoformat(),
-                "date": (base_dt + timedelta(hours=30)).isoformat(),
-                "competition": "DEMO • Ligue 1",
-                "home_team": "PSG",
-                "away_team": "Marseille",
-                "home_team_id": 0,
-                "away_team_id": 0,
-            }
-        )
-    return demo
-
-
-@st.cache_data(ttl=30 * 60)
-def _cached_matches(days_ahead: int):
-    """
-    Override: если ключей нет / матчей нет — даём demo набор.
-    """
-    cfg, sports, api, analyzer = _services()
-
-    try:
-        matches = sports.get_matches(days_ahead=int(days_ahead)) or []
-    except Exception:
-        matches = []
-
-    if matches:
-        return matches
-
-    # fallback to demo
-    return _demo_matches(days_ahead=int(days_ahead))
-
-# ============================================================
-# GLOBAL NAVIGATION STATE
-# ============================================================
-
-def open_analysis(home, away, match_date=None):
-    st.session_state["nav_page"] = "🥇 Анализ"
-    st.session_state["prefill_match"] = {
-        "home": home,
-        "away": away,
-        "date": match_date,
-    }
-    st.rerun()
-# ============================================================
-# STEP 7 (v2) — One-click Analyze WITHOUT changing menu
-# Adds a small "Analyze selected" panel to Auto Scanner results
-# ============================================================
-
-def _nav_to_analysis(home: str, away: str, dt: str | None = None):
-    st.session_state["prefill_match"] = {"home": home, "away": away, "dt": dt}
-    st.session_state["goto_analysis"] = True
-    st.rerun()
-
-
-def _apply_prefill_to_analyze_ui():
-    """
-    Helper: call this at top of page_analyze if you want automatic prefill.
-    But we can't edit page_analyze now; so we will store values in session_state
-    and rely on existing text_input default logic (we'll override page_analyze below).
-    """
-
-
-def page_analyze(analyzer: MatchAnalyzer, sports: SportsCollector, cfg: Config, api: ApiSportsCollector):
-    """
-    Override page_analyze to support prefill from Auto Scanner,
-    without touching your menu.
-    """
-    st.title("🏆 Анализ")
-    st.caption("One-click analyze: матч может подставляться из Auto Scanner.")
-
-    prefill = st.session_state.pop("prefill_match", None)
-    if prefill:
-        st.session_state["home_prefill"] = prefill.get("home") or "Arsenal"
-        st.session_state["away_prefill"] = prefill.get("away") or "Chelsea"
-
-    home_default = st.session_state.get("home_prefill", "Arsenal")
-    away_default = st.session_state.get("away_prefill", "Chelsea")
-
-    home = st.text_input("Home", value=home_default, key="an_home")
-    away = st.text_input("Away", value=away_default, key="an_away")
-    match_date = st.date_input("Дата", value=date.today(), key="an_date")
-    match_time = st.time_input("Время (UTC)", value=datetime.utcnow().time(), key="an_time")
-
-    if st.button("🚀 Анализировать", type="primary"):
-        st.session_state["last_error"] = ""
-        try:
-            result = analyzer.analyze_match(
-                home_team=normalize_team_name(home),
-                away_team=normalize_team_name(away),
-                match_datetime=f"{match_date}T{match_time}:00",
-            )
-            st.session_state["result"] = result
-            st.session_state["last_run_at"] = datetime.utcnow().isoformat()
-            save_analysis(cfg.DB_PATH, result)
-        except Exception as e:
-            st.session_state["last_error"] = str(e)
-            logger.exception("analyze failed: %s", e)
-
-    if st.session_state.get("last_error"):
-        st.error(st.session_state["last_error"])
-
-    render_result(st.session_state.get("result") or {})
-
-
-def page_opportunities(analyzer, sports):
-    """
-    Override Auto Scanner page to add:
-    - after scan results, a selector + 🔍 Analyze button
-    Does not change menu routing at all.
-    """
-    st.title("🔥 Opportunities — Auto Scanner")
-    st.caption("Авто-скан ближайших матчей и топ прогнозов по уверенности (кеш ускоряет повторные запуски).")
-
-    c1, c2, c3 = st.columns([1, 1, 1])
-    with c1:
-        days = st.slider("Дней вперёд", 1, 7, 2)
-    with c2:
-        top_n = st.slider("Топ матчей", 5, 50, 15)
-    with c3:
-        autoref = st.checkbox("Автообновление", value=False)
-
-    if autoref:
-        st.autorefresh(interval=30_000, key="auto_scan_refresh")
-
-    matches = _cached_matches(int(days))
-    if not matches:
-        st.warning("Матчи не найдены. Проверь FOOTBALL_DATA_KEY. (или DEMO fallback)")
-        return
-
-    df = pd.DataFrame(matches)
-    if df.empty:
-        st.warning("Пустой список матчей.")
-        return
-
-    run_scan = st.button("🚀 Запустить авто-скан", type="primary", use_container_width=True)
-
-    cached_scan = st.session_state.get("auto_scan_rows")
-    cached_meta = st.session_state.get("auto_scan_meta")
-
-    if cached_scan and cached_meta and not run_scan:
-        st.info(f"Показаны результаты последнего скана: {cached_meta}")
-        out = pd.DataFrame(cached_scan)
-        out = out.head(int(top_n))
-        st.dataframe(out, use_container_width=True, hide_index=True)
-
-        # --- one-click analyze panel ---
-        _one_click_panel(out)
-        return
-
-    if not run_scan:
-        st.info("Нажми «Запустить авто-скан», чтобы построить рейтинг матчей.")
-        return
-
-    rows = []
-    prog = st.progress(0.0)
-    total = len(df)
-
-    for i, r in enumerate(df.to_dict("records"), start=1):
-        prog.progress(i / max(1, total))
-
-        home = str(r.get("home_team") or r.get("homeTeam") or "").strip()
-        away = str(r.get("away_team") or r.get("awayTeam") or "").strip()
-        if not home or not away:
-            continue
-
-        match_dt = str(r.get("utcDate") or r.get("date") or "") or datetime.utcnow().isoformat()
-
-        h_id = r.get("home_team_id") or r.get("homeTeamId") or 0
-        a_id = r.get("away_team_id") or r.get("awayTeamId") or 0
-        h_id = int(h_id) if int(h_id) else None
-        a_id = int(a_id) if int(a_id) else None
-
-        try:
-            res = _cached_analyze(home, away, match_dt, h_id, a_id)
-        except Exception:
-            continue
-
-        probs = res.get("final_probs") or {}
-        ph = _prob_safe(probs.get("home_win", 0))
-        pdw = _prob_safe(probs.get("draw", 0))
-        pa = _prob_safe(probs.get("away_win", 0))
-
-        pick = "Home"
-        pmax = ph
-        if pdw > pmax:
-            pick, pmax = "Draw", pdw
-        if pa > pmax:
-            pick, pmax = "Away", pa
-
-        conf = float(res.get("confidence", pmax * 100) or (pmax * 100))
-
-        rows.append(
-            {
-                "datetime": match_dt,
-                "league": r.get("competition") or r.get("league") or "",
-                "home": home,
-                "away": away,
-                "pick": pick,
-                "confidence_%": round(conf, 1),
-                "p_pick": round(pmax, 4),
-                "p_home": round(ph, 4),
-                "p_draw": round(pdw, 4),
-                "p_away": round(pa, 4),
-            }
-        )
-
-    prog.empty()
-
-    out = pd.DataFrame(rows)
-    if out.empty:
-        st.warning("Скан не дал результатов.")
-        return
-
-    out = out.sort_values(["confidence_%", "p_pick"], ascending=False)
-    st.session_state["auto_scan_rows"] = out.to_dict("records")
-    st.session_state["auto_scan_meta"] = f"{datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')} | days={days} | matches={len(out)}"
-
-    st.success("Скан завершён ✅")
-    out_top = out.head(int(top_n))
-    st.dataframe(out_top, use_container_width=True, hide_index=True)
-
-    _one_click_panel(out_top)
-
-    with st.expander("💾 Очистить кеш скана", expanded=False):
-        if st.button("Очистить auto-scan кеш", use_container_width=True):
-            st.session_state.pop("auto_scan_rows", None)
-            st.session_state.pop("auto_scan_meta", None)
-            st.success("Очищено. Перезапусти скан.")
-
-
-def _one_click_panel(out_df: pd.DataFrame):
-    if out_df is None or out_df.empty:
-        return
-
-    st.subheader("🔍 One-Click Analyze")
-    options = []
-    for r in out_df.to_dict("records"):
-        options.append(f"{r.get('home')} — {r.get('away')}  |  {r.get('confidence_%')}%")
-
-    choice = st.selectbox("Выбери матч", options, key="oneclick_select")
-
-    idx = options.index(choice)
-    row = out_df.to_dict("records")[idx]
-
-    cols = st.columns([1, 1])
-    with cols[0]:
-        st.write(f"**{row.get('home')} — {row.get('away')}**")
-        st.caption(f"Pick: {row.get('pick')} | Conf: {row.get('confidence_%')}%")
-    with cols[1]:
-        if st.button("🔍 Открыть анализ", type="primary", use_container_width=True, key="oneclick_go"):
-            _nav_to_analysis(row.get("home"), row.get("away"), row.get("datetime"))
