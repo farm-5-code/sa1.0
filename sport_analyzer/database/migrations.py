@@ -15,9 +15,11 @@ def _get_columns(conn: sqlite3.Connection, table: str) -> List[str]:
 
 
 def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
-    return bool(conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
-    ).fetchone())
+    return bool(
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+        ).fetchone()
+    )
 
 
 def _ensure_migration_log(conn: sqlite3.Connection):
@@ -30,9 +32,7 @@ def _ensure_migration_log(conn: sqlite3.Connection):
 
 
 def _applied(conn: sqlite3.Connection, mid: str) -> bool:
-    return bool(conn.execute(
-        "SELECT 1 FROM _migrations WHERE id=?", (mid,)
-    ).fetchone())
+    return bool(conn.execute("SELECT 1 FROM _migrations WHERE id=?", (mid,)).fetchone())
 
 
 def _mark_applied(conn: sqlite3.Connection, mid: str):
@@ -129,7 +129,9 @@ def _m005_odds_snapshots(conn):
             PRIMARY KEY (ts, fixture_id, market, selection)
         )
     """)
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_odds_fx_ts ON odds_snapshots(fixture_id, ts)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_odds_fx_ts ON odds_snapshots(fixture_id, ts)"
+    )
     logger.info("M005: odds_snapshots ready")
     _mark_applied(conn, mid)
 
@@ -153,6 +155,8 @@ def _m006_steam_events(conn):
             PRIMARY KEY (ts, fixture_id, market, selection, window_min)
         )
     """)
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_steam_fx_ts ON steam_events(fixture_id, ts)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_steam_fx_ts ON steam_events(fixture_id, ts)"
+    )
     logger.info("M006: steam_events ready")
     _mark_applied(conn, mid)

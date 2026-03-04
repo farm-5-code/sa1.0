@@ -116,7 +116,7 @@ class ApiSportsCollector(BaseCollector):
             return {"fixture_id": fixture_id, "markets": {}}
 
         data = resp.json() or {}
-        response = (data.get("response") or [])
+        response = data.get("response") or []
         if not response:
             out = {"fixture_id": fixture_id, "markets": {}}
             if use_cache:
@@ -128,7 +128,9 @@ class ApiSportsCollector(BaseCollector):
         bookmakers = (root.get("bookmakers") or [])[:bookmakers_limit]
 
         # helper: collect odds for a given bet_id and optional value filter
-        def collect(bet_id: int, value_filter: Optional[List[str]] = None) -> Dict[str, List[float]]:
+        def collect(
+            bet_id: int, value_filter: Optional[List[str]] = None
+        ) -> Dict[str, List[float]]:
             out: Dict[str, List[float]] = {}
             for b in bookmakers:
                 bets = b.get("bets") or []
@@ -166,7 +168,9 @@ class ApiSportsCollector(BaseCollector):
             self._cache_set(cache_key, out)
         return out
 
+
 # ── Odds history (snapshots) ─────────────────────────────────────
+
 
 def should_take_snapshot(self, fixture_id: int, interval_seconds: int = 600) -> bool:
     """True если последний snapshot старше interval_seconds."""
@@ -181,6 +185,7 @@ def should_take_snapshot(self, fixture_id: int, interval_seconds: int = 600) -> 
     except Exception:
         # если БД ещё не мигрирована — попробуем снять
         return True
+
 
 def save_snapshot_from_odds(self, fixture_id: int, odds_payload: Dict[str, Any]):
     """Сохраняет упрощённый snapshot: best/avg/books для рынков 1X2, OU_2_5, BTTS."""
@@ -199,15 +204,17 @@ def save_snapshot_from_odds(self, fixture_id: int, odds_payload: Dict[str, Any])
                     continue
             if not odds_f:
                 continue
-            rows.append((
-                now,
-                int(fixture_id),
-                str(market),
-                str(selection),
-                float(max(odds_f)),
-                float(sum(odds_f) / len(odds_f)),
-                int(len(odds_f)),
-            ))
+            rows.append(
+                (
+                    now,
+                    int(fixture_id),
+                    str(market),
+                    str(selection),
+                    float(max(odds_f)),
+                    float(sum(odds_f) / len(odds_f)),
+                    int(len(odds_f)),
+                )
+            )
 
     if not rows:
         return
@@ -218,7 +225,10 @@ def save_snapshot_from_odds(self, fixture_id: int, odds_payload: Dict[str, Any])
             rows,
         )
 
-def get_snapshot_history(self, fixture_id: int, hours: float = 24.0) -> List[Dict[str, Any]]:
+
+def get_snapshot_history(
+    self, fixture_id: int, hours: float = 24.0
+) -> List[Dict[str, Any]]:
     """История snapshot'ов по матчу за последние hours."""
     since = time.time() - float(hours) * 3600.0
     try:
@@ -229,19 +239,24 @@ def get_snapshot_history(self, fixture_id: int, hours: float = 24.0) -> List[Dic
             )
             out = []
             for ts_, fx, market, sel, best, avg, books in cur.fetchall():
-                out.append({
-                    "ts": float(ts_),
-                    "datetime": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(float(ts_))),
-                    "fixture_id": int(fx),
-                    "market": market,
-                    "selection": sel,
-                    "best_odd": float(best) if best is not None else None,
-                    "avg_odd": float(avg) if avg is not None else None,
-                    "books": int(books) if books is not None else 0,
-                })
+                out.append(
+                    {
+                        "ts": float(ts_),
+                        "datetime": time.strftime(
+                            "%Y-%m-%d %H:%M:%S", time.gmtime(float(ts_))
+                        ),
+                        "fixture_id": int(fx),
+                        "market": market,
+                        "selection": sel,
+                        "best_odd": float(best) if best is not None else None,
+                        "avg_odd": float(avg) if avg is not None else None,
+                        "books": int(books) if books is not None else 0,
+                    }
+                )
             return out
     except Exception:
         return []
+
 
 def save_steam_events(self, events: List[Dict[str, Any]]):
     """Сохраняет события steam в таблицу steam_events."""
@@ -250,18 +265,20 @@ def save_steam_events(self, events: List[Dict[str, Any]]):
     rows = []
     for e in events:
         try:
-            rows.append((
-                float(e["ts"]),
-                int(e["fixture_id"]),
-                str(e["market"]),
-                str(e["selection"]),
-                int(e["window_min"]),
-                float(e.get("best_start") or 0.0),
-                float(e.get("best_last") or 0.0),
-                float(e.get("best_chg_pct") or 0.0),
-                int(e.get("books") or 0),
-                float(e.get("steam_score") or 0.0),
-            ))
+            rows.append(
+                (
+                    float(e["ts"]),
+                    int(e["fixture_id"]),
+                    str(e["market"]),
+                    str(e["selection"]),
+                    int(e["window_min"]),
+                    float(e.get("best_start") or 0.0),
+                    float(e.get("best_last") or 0.0),
+                    float(e.get("best_chg_pct") or 0.0),
+                    int(e.get("books") or 0),
+                    float(e.get("steam_score") or 0.0),
+                )
+            )
         except Exception:
             continue
     if not rows:
@@ -272,7 +289,10 @@ def save_steam_events(self, events: List[Dict[str, Any]]):
             rows,
         )
 
-def get_steam_events(self, fixture_id: int, hours: float = 24.0) -> List[Dict[str, Any]]:
+
+def get_steam_events(
+    self, fixture_id: int, hours: float = 24.0
+) -> List[Dict[str, Any]]:
     since = time.time() - float(hours) * 3600.0
     try:
         with sqlite3.connect(self.db_path, timeout=10) as c:
@@ -281,28 +301,36 @@ def get_steam_events(self, fixture_id: int, hours: float = 24.0) -> List[Dict[st
                 "FROM steam_events WHERE fixture_id=? AND ts>=? ORDER BY ts DESC",
                 (int(fixture_id), since),
             )
-            out=[]
+            out = []
             for ts_, fx, market, sel, w, bs, bl, pct, books, score in cur.fetchall():
-                out.append({
-                    "ts": float(ts_),
-                    "datetime": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(float(ts_))),
-                    "fixture_id": int(fx),
-                    "market": market,
-                    "selection": sel,
-                    "window_min": int(w),
-                    "best_start": float(bs),
-                    "best_last": float(bl),
-                    "best_chg_pct": float(pct),
-                    "books": int(books),
-                    "steam_score": float(score),
-                })
+                out.append(
+                    {
+                        "ts": float(ts_),
+                        "datetime": time.strftime(
+                            "%Y-%m-%d %H:%M:%S", time.gmtime(float(ts_))
+                        ),
+                        "fixture_id": int(fx),
+                        "market": market,
+                        "selection": sel,
+                        "window_min": int(w),
+                        "best_start": float(bs),
+                        "best_last": float(bl),
+                        "best_chg_pct": float(pct),
+                        "books": int(books),
+                        "steam_score": float(score),
+                    }
+                )
             return out
     except Exception:
         return []
 
+
 # ── Team context / fatigue ───────────────────────────────────────
 
-def get_team_recent_fixtures(self, team_id: int, last: int = 20, timezone: str = "UTC", use_cache: bool = True) -> List[Dict[str, Any]]:
+
+def get_team_recent_fixtures(
+    self, team_id: int, last: int = 20, timezone: str = "UTC", use_cache: bool = True
+) -> List[Dict[str, Any]]:
     """Последние матчи команды (API-Sports)."""
     cache_key = f"apisports_team_last_{team_id}_{last}_{timezone}"
     if use_cache:
@@ -310,33 +338,41 @@ def get_team_recent_fixtures(self, team_id: int, last: int = 20, timezone: str =
         if cached and isinstance(cached, dict) and "items" in cached:
             return cached["items"]
 
-    resp = self.get(f"{_API_BASE}/fixtures", params={"team": int(team_id), "last": int(last), "timezone": timezone})
+    resp = self.get(
+        f"{_API_BASE}/fixtures",
+        params={"team": int(team_id), "last": int(last), "timezone": timezone},
+    )
     if resp is None or resp.status_code != 200:
         return []
     data = resp.json() or {}
-    items=[]
+    items = []
     for it in data.get("response", []) or []:
         fx = it.get("fixture", {}) or {}
         league_info = it.get("league", {}) or {}
         teams = it.get("teams", {}) or {}
-        items.append({
-            "fixture_id": fx.get("id"),
-            "utcDate": fx.get("date"),
-            "timestamp": fx.get("timestamp"),
-            "status": (fx.get("status", {}) or {}).get("short"),
-            "league": league_info.get("name"),
-            "league_id": league_info.get("id"),
-            "season": league_info.get("season"),
-            "home_team": (teams.get("home", {}) or {}).get("name"),
-            "away_team": (teams.get("away", {}) or {}).get("name"),
-            "goals_home": (it.get("goals", {}) or {}).get("home"),
-            "goals_away": (it.get("goals", {}) or {}).get("away"),
-        })
+        items.append(
+            {
+                "fixture_id": fx.get("id"),
+                "utcDate": fx.get("date"),
+                "timestamp": fx.get("timestamp"),
+                "status": (fx.get("status", {}) or {}).get("short"),
+                "league": league_info.get("name"),
+                "league_id": league_info.get("id"),
+                "season": league_info.get("season"),
+                "home_team": (teams.get("home", {}) or {}).get("name"),
+                "away_team": (teams.get("away", {}) or {}).get("name"),
+                "goals_home": (it.get("goals", {}) or {}).get("home"),
+                "goals_away": (it.get("goals", {}) or {}).get("away"),
+            }
+        )
     if use_cache:
         self._cache_set(cache_key, {"items": items})
     return items
 
-def compute_fatigue_metrics(self, team_id: int, match_utc_iso: str, timezone: str = "UTC") -> Dict[str, Any]:
+
+def compute_fatigue_metrics(
+    self, team_id: int, match_utc_iso: str, timezone: str = "UTC"
+) -> Dict[str, Any]:
     """Базовые метрики нагрузки/усталости:
     - rest_days: дней отдыха с предыдущего матча
     - matches_7d / matches_14d: количество матчей за 7/14 дней до матча
@@ -348,9 +384,11 @@ def compute_fatigue_metrics(self, team_id: int, match_utc_iso: str, timezone: st
         match_dt = datetime.utcnow()
 
     # берем последние 20 игр и считаем окна
-    fixtures = self.get_team_recent_fixtures(int(team_id), last=25, timezone=timezone, use_cache=True)
+    fixtures = self.get_team_recent_fixtures(
+        int(team_id), last=25, timezone=timezone, use_cache=True
+    )
     # timestamps of played games before match_dt
-    played_ts=[]
+    played_ts = []
     for f in fixtures:
         try:
             dt = datetime.fromisoformat(str(f.get("utcDate")).replace("Z", "+00:00"))
@@ -381,16 +419,21 @@ def compute_fatigue_metrics(self, team_id: int, match_utc_iso: str, timezone: st
     }
     return out
 
-def compute_team_form_metrics(self, team_id: int, match_utc_iso: str, last: int = 10, timezone: str = "UTC") -> Dict[str, Any]:
+
+def compute_team_form_metrics(
+    self, team_id: int, match_utc_iso: str, last: int = 10, timezone: str = "UTC"
+) -> Dict[str, Any]:
     """Форма команды по последним last матчам до match_utc_iso."""
     try:
         match_dt = datetime.fromisoformat(str(match_utc_iso).replace("Z", "+00:00"))
     except Exception:
         match_dt = datetime.utcnow()
 
-    fixtures = self.get_team_recent_fixtures(int(team_id), last=max(25, last*3), timezone=timezone, use_cache=True)
+    fixtures = self.get_team_recent_fixtures(
+        int(team_id), last=max(25, last * 3), timezone=timezone, use_cache=True
+    )
 
-    games=[]
+    games = []
     for f in fixtures:
         try:
             dt = datetime.fromisoformat(str(f.get("utcDate")).replace("Z", "+00:00"))
@@ -420,28 +463,30 @@ def compute_team_form_metrics(self, team_id: int, match_utc_iso: str, last: int 
         elif gf < ga_:
             res = "L"
 
-        games.append({
-            "dt": dt,
-            "is_home": is_home,
-            "gf": gf,
-            "ga": ga_,
-            "res": res,
-        })
+        games.append(
+            {
+                "dt": dt,
+                "is_home": is_home,
+                "gf": gf,
+                "ga": ga_,
+                "res": res,
+            }
+        )
 
-    games = sorted(games, key=lambda x: x["dt"])[-int(last):]
+    games = sorted(games, key=lambda x: x["dt"])[-int(last) :]
     n = len(games)
     if n == 0:
         return {"team_id": int(team_id), "n": 0}
 
-    w = sum(1 for g in games if g["res"]=="W")
-    d = sum(1 for g in games if g["res"]=="D")
-    l = sum(1 for g in games if g["res"]=="L")
-    pts = 3*w + d
+    w = sum(1 for g in games if g["res"] == "W")
+    d = sum(1 for g in games if g["res"] == "D")
+    losses = sum(1 for g in games if g["res"] == "L")
+    pts = 3 * w + d
     gf = sum(g["gf"] for g in games)
     ga_ = sum(g["ga"] for g in games)
-    cs = sum(1 for g in games if g["ga"]==0)
-    btts = sum(1 for g in games if (g["gf"]>0 and g["ga"]>0))
-    over25 = sum(1 for g in games if (g["gf"]+g["ga"]>=3))
+    cs = sum(1 for g in games if g["ga"] == 0)
+    btts = sum(1 for g in games if (g["gf"] > 0 and g["ga"] > 0))
+    over25 = sum(1 for g in games if (g["gf"] + g["ga"] >= 3))
 
     home_games = [g for g in games if g["is_home"]]
     away_games = [g for g in games if not g["is_home"]]
@@ -449,18 +494,21 @@ def compute_team_form_metrics(self, team_id: int, match_utc_iso: str, last: int 
     def pack(arr):
         if not arr:
             return {"n": 0}
-        w_ = sum(1 for g in arr if g["res"]=="W")
-        d_ = sum(1 for g in arr if g["res"]=="D")
-        l_ = sum(1 for g in arr if g["res"]=="L")
+        w_ = sum(1 for g in arr if g["res"] == "W")
+        d_ = sum(1 for g in arr if g["res"] == "D")
+        l_ = sum(1 for g in arr if g["res"] == "L")
         gf_ = sum(g["gf"] for g in arr)
         ga__ = sum(g["ga"] for g in arr)
         return {
             "n": len(arr),
-            "W": int(w_), "D": int(d_), "L": int(l_),
-            "pts": int(3*w_ + d_),
-            "GF": int(gf_), "GA": int(ga__),
-            "avg_GF": round(gf_/len(arr), 2),
-            "avg_GA": round(ga__/len(arr), 2),
+            "W": int(w_),
+            "D": int(d_),
+            "L": int(l_),
+            "pts": int(3 * w_ + d_),
+            "GF": int(gf_),
+            "GA": int(ga__),
+            "avg_GF": round(gf_ / len(arr), 2),
+            "avg_GA": round(ga__ / len(arr), 2),
         }
 
     out = {
@@ -468,22 +516,30 @@ def compute_team_form_metrics(self, team_id: int, match_utc_iso: str, last: int 
         "n": int(n),
         "W": int(w),
         "D": int(d),
-        "L": int(l),
+        "L": int(losses),
         "pts": int(pts),
         "GF": int(gf),
         "GA": int(ga_),
-        "avg_GF": round(gf/n, 2),
-        "avg_GA": round(ga_/n, 2),
+        "avg_GF": round(gf / n, 2),
+        "avg_GA": round(ga_ / n, 2),
         "clean_sheets": int(cs),
-        "btts_rate": round(btts/n, 3),
-        "over2_5_rate": round(over25/n, 3),
+        "btts_rate": round(btts / n, 3),
+        "over2_5_rate": round(over25 / n, 3),
         "home": pack(home_games),
         "away": pack(away_games),
         "last_match_utc": games[-1]["dt"].isoformat(),
     }
     return out
 
-def get_h2h(self, home_team_id: int, away_team_id: int, last: int = 10, timezone: str = "UTC", use_cache: bool = True) -> List[Dict[str, Any]]:
+
+def get_h2h(
+    self,
+    home_team_id: int,
+    away_team_id: int,
+    last: int = 10,
+    timezone: str = "UTC",
+    use_cache: bool = True,
+) -> List[Dict[str, Any]]:
     """Head-to-head матчи между командами."""
     cache_key = f"apisports_h2h_{home_team_id}_{away_team_id}_{last}_{timezone}"
     if use_cache:
@@ -491,31 +547,44 @@ def get_h2h(self, home_team_id: int, away_team_id: int, last: int = 10, timezone
         if cached and isinstance(cached, dict) and "items" in cached:
             return cached["items"]
 
-    resp = self.get(f"{_API_BASE}/fixtures/headtohead", params={"h2h": f"{int(home_team_id)}-{int(away_team_id)}", "last": int(last), "timezone": timezone})
+    resp = self.get(
+        f"{_API_BASE}/fixtures/headtohead",
+        params={
+            "h2h": f"{int(home_team_id)}-{int(away_team_id)}",
+            "last": int(last),
+            "timezone": timezone,
+        },
+    )
     if resp is None or resp.status_code != 200:
         return []
     data = resp.json() or {}
-    items=[]
+    items = []
     for it in data.get("response", []) or []:
         fx = it.get("fixture", {}) or {}
         teams = it.get("teams", {}) or {}
         league_info = it.get("league", {}) or {}
         goals = it.get("goals", {}) or {}
-        items.append({
-            "utcDate": fx.get("date"),
-            "league": league_info.get("name"),
-            "home": (teams.get("home", {}) or {}).get("name"),
-            "away": (teams.get("away", {}) or {}).get("name"),
-            "home_goals": goals.get("home"),
-            "away_goals": goals.get("away"),
-        })
+        items.append(
+            {
+                "utcDate": fx.get("date"),
+                "league": league_info.get("name"),
+                "home": (teams.get("home", {}) or {}).get("name"),
+                "away": (teams.get("away", {}) or {}).get("name"),
+                "home_goals": goals.get("home"),
+                "away_goals": goals.get("away"),
+            }
+        )
     if use_cache:
         self._cache_set(cache_key, {"items": items})
     return items
 
+
 # ── Lineups / injuries ───────────────────────────────────────────
 
-def get_fixture_lineups(self, fixture_id: int, use_cache: bool = True) -> List[Dict[str, Any]]:
+
+def get_fixture_lineups(
+    self, fixture_id: int, use_cache: bool = True
+) -> List[Dict[str, Any]]:
     """Lineups for a fixture (if available)."""
     cache_key = f"apisports_lineups_{fixture_id}"
     if use_cache:
@@ -523,42 +592,49 @@ def get_fixture_lineups(self, fixture_id: int, use_cache: bool = True) -> List[D
         if cached and isinstance(cached, dict) and "items" in cached:
             return cached["items"]
 
-    resp = self.get(f"{_API_BASE}/fixtures/lineups", params={"fixture": int(fixture_id)})
+    resp = self.get(
+        f"{_API_BASE}/fixtures/lineups", params={"fixture": int(fixture_id)}
+    )
     if resp is None or resp.status_code != 200:
         return []
     data = resp.json() or {}
     items = data.get("response") or []
     # Keep only essentials
-    out=[]
+    out = []
     for it in items:
         team = it.get("team") or {}
-        out.append({
-            "team": {"id": team.get("id"), "name": team.get("name")},
-            "formation": it.get("formation"),
-            "coach": (it.get("coach") or {}).get("name"),
-            "startXI": [
-                {
-                    "name": (p.get("player") or {}).get("name"),
-                    "number": (p.get("player") or {}).get("number"),
-                    "pos": (p.get("player") or {}).get("pos"),
-                    "grid": (p.get("player") or {}).get("grid"),
-                }
-                for p in (it.get("startXI") or [])
-            ],
-            "substitutes": [
-                {
-                    "name": (p.get("player") or {}).get("name"),
-                    "number": (p.get("player") or {}).get("number"),
-                    "pos": (p.get("player") or {}).get("pos"),
-                }
-                for p in (it.get("substitutes") or [])
-            ],
-        })
+        out.append(
+            {
+                "team": {"id": team.get("id"), "name": team.get("name")},
+                "formation": it.get("formation"),
+                "coach": (it.get("coach") or {}).get("name"),
+                "startXI": [
+                    {
+                        "name": (p.get("player") or {}).get("name"),
+                        "number": (p.get("player") or {}).get("number"),
+                        "pos": (p.get("player") or {}).get("pos"),
+                        "grid": (p.get("player") or {}).get("grid"),
+                    }
+                    for p in (it.get("startXI") or [])
+                ],
+                "substitutes": [
+                    {
+                        "name": (p.get("player") or {}).get("name"),
+                        "number": (p.get("player") or {}).get("number"),
+                        "pos": (p.get("player") or {}).get("pos"),
+                    }
+                    for p in (it.get("substitutes") or [])
+                ],
+            }
+        )
     if use_cache:
         self._cache_set(cache_key, {"items": out})
     return out
 
-def get_fixture_injuries(self, fixture_id: int, use_cache: bool = True) -> List[Dict[str, Any]]:
+
+def get_fixture_injuries(
+    self, fixture_id: int, use_cache: bool = True
+) -> List[Dict[str, Any]]:
     """Injuries for a fixture (if API provides)."""
     cache_key = f"apisports_injuries_{fixture_id}"
     if use_cache:
@@ -571,23 +647,29 @@ def get_fixture_injuries(self, fixture_id: int, use_cache: bool = True) -> List[
         return []
     data = resp.json() or {}
     items = data.get("response") or []
-    out=[]
+    out = []
     for it in items:
         team = it.get("team") or {}
         player = it.get("player") or {}
-        out.append({
-            "team": {"id": team.get("id"), "name": team.get("name")},
-            "player": {"id": player.get("id"), "name": player.get("name")},
-            "type": it.get("type"),
-            "reason": it.get("reason"),
-        })
+        out.append(
+            {
+                "team": {"id": team.get("id"), "name": team.get("name")},
+                "player": {"id": player.get("id"), "name": player.get("name")},
+                "type": it.get("type"),
+                "reason": it.get("reason"),
+            }
+        )
     if use_cache:
         self._cache_set(cache_key, {"items": out})
     return out
 
+
 # ── Standings / motivation ───────────────────────────────────────
 
-def get_standings(self, league_id: int, season: int, use_cache: bool = True) -> Dict[str, Any]:
+
+def get_standings(
+    self, league_id: int, season: int, use_cache: bool = True
+) -> Dict[str, Any]:
     """Standings for league+season."""
     cache_key = f"apisports_standings_{league_id}_{season}"
     if use_cache:
@@ -595,17 +677,23 @@ def get_standings(self, league_id: int, season: int, use_cache: bool = True) -> 
         if cached and isinstance(cached, dict) and "data" in cached:
             return cached["data"]
 
-    resp = self.get(f"{_API_BASE}/standings", params={"league": int(league_id), "season": int(season)})
+    resp = self.get(
+        f"{_API_BASE}/standings",
+        params={"league": int(league_id), "season": int(season)},
+    )
     if resp is None or resp.status_code != 200:
         return {}
     data = resp.json() or {}
-    payload = (data.get("response") or [])
+    payload = data.get("response") or []
     out = payload[0] if payload else {}
     if use_cache:
         self._cache_set(cache_key, {"data": out})
     return out
 
-def compute_motivation_metrics(self, standings_payload: Dict[str, Any], team_id: int) -> Dict[str, Any]:
+
+def compute_motivation_metrics(
+    self, standings_payload: Dict[str, Any], team_id: int
+) -> Dict[str, Any]:
     """Extract table position, points, goals, and distance to key zones."""
     try:
         leagues = standings_payload.get("league") or {}
@@ -626,7 +714,7 @@ def compute_motivation_metrics(self, standings_payload: Dict[str, Any], team_id:
     played = int((row.get("all") or {}).get("played") or 0)
     gf = int((row.get("all") or {}).get("goals", {}).get("for") or 0)
     ga = int((row.get("all") or {}).get("goals", {}).get("against") or 0)
-    gd = int(row.get("goalsDiff") or (gf-ga))
+    gd = int(row.get("goalsDiff") or (gf - ga))
 
     # define key targets (heuristics):
     # - top4 (UCL-ish), top6 (Europe-ish), bottom3 (relegation)
@@ -667,19 +755,23 @@ def compute_motivation_metrics(self, standings_payload: Dict[str, Any], team_id:
         "near_releg": bool(near_releg),
     }
 
-def compute_trend_streaks(self, team_id: int, match_utc_iso: str, last: int = 10, timezone: str = "UTC") -> Dict[str, Any]:
+
+def compute_trend_streaks(
+    self, team_id: int, match_utc_iso: str, last: int = 10, timezone: str = "UTC"
+) -> Dict[str, Any]:
     """Серии/тренды по последним матчам (до match_utc_iso).
     Возвращает длины текущих streaks (до первого разрыва).
     """
-    form = self.compute_team_form_metrics(team_id=int(team_id), match_utc_iso=match_utc_iso, last=int(last), timezone=timezone)
     # For streaks we need ordered games; reuse internal data by re-fetching and building list
     try:
         match_dt = datetime.fromisoformat(str(match_utc_iso).replace("Z", "+00:00"))
     except Exception:
         match_dt = datetime.utcnow()
 
-    fixtures = self.get_team_recent_fixtures(int(team_id), last=max(30, last*4), timezone=timezone, use_cache=True)
-    games=[]
+    fixtures = self.get_team_recent_fixtures(
+        int(team_id), last=max(30, last * 4), timezone=timezone, use_cache=True
+    )
+    games = []
     for f in fixtures:
         try:
             dt = datetime.fromisoformat(str(f.get("utcDate")).replace("Z", "+00:00"))
@@ -709,21 +801,25 @@ def compute_trend_streaks(self, team_id: int, match_utc_iso: str, last: int = 10
         elif gf < ga_:
             res = "L"
 
-        games.append({
-            "dt": dt,
-            "gf": gf,
-            "ga": ga_,
-            "res": res,
-            "is_home": is_home,
-            "total": gf + ga_,
-        })
+        games.append(
+            {
+                "dt": dt,
+                "gf": gf,
+                "ga": ga_,
+                "res": res,
+                "is_home": is_home,
+                "total": gf + ga_,
+            }
+        )
 
-    games = sorted(games, key=lambda x: x["dt"], reverse=True)[:int(last)]  # most recent first
+    games = sorted(games, key=lambda x: x["dt"], reverse=True)[
+        : int(last)
+    ]  # most recent first
     if not games:
         return {"team_id": int(team_id), "n": 0}
 
     def streak(predicate):
-        s=0
+        s = 0
         for g in games:
             if predicate(g):
                 s += 1
@@ -740,20 +836,23 @@ def compute_trend_streaks(self, team_id: int, match_utc_iso: str, last: int = 10
         "streak_btts": int(streak(lambda g: g["gf"] > 0 and g["ga"] > 0)),
         "streak_over2_5": int(streak(lambda g: g["total"] >= 3)),
         "streak_under2_5": int(streak(lambda g: g["total"] <= 2)),
-        "streak_unbeaten": int(streak(lambda g: g["res"] in ("W","D"))),
-        "streak_winless": int(streak(lambda g: g["res"] in ("L","D"))),
+        "streak_unbeaten": int(streak(lambda g: g["res"] in ("W", "D"))),
+        "streak_winless": int(streak(lambda g: g["res"] in ("L", "D"))),
         "streak_wins": int(streak(lambda g: g["res"] == "W")),
         "streak_losses": int(streak(lambda g: g["res"] == "L")),
     }
     # add simple momentum: last5 points
     pts_last5 = 0
     for g in games[:5]:
-        pts_last5 += 3 if g["res"]=="W" else (1 if g["res"]=="D" else 0)
+        pts_last5 += 3 if g["res"] == "W" else (1 if g["res"] == "D" else 0)
     out["points_last5"] = int(pts_last5)
     return out
 
+
 # ── Travel / away-run metrics ────────────────────────────────────
-def compute_travel_metrics(self, team_id: int, match_utc_iso: str, last: int = 10, timezone: str = "UTC") -> Dict[str, Any]:
+def compute_travel_metrics(
+    self, team_id: int, match_utc_iso: str, last: int = 10, timezone: str = "UTC"
+) -> Dict[str, Any]:
     """Оценка нагрузки поездок:
     - away_streak: подряд выездные матчи
     - home_streak: подряд домашние матчи
@@ -761,16 +860,18 @@ def compute_travel_metrics(self, team_id: int, match_utc_iso: str, last: int = 1
     - venue_switches (частота смены home/away)
     """
     try:
-        match_dt = datetime.fromisoformat(str(match_utc_iso).replace("Z","+00:00"))
+        match_dt = datetime.fromisoformat(str(match_utc_iso).replace("Z", "+00:00"))
     except Exception:
         match_dt = datetime.utcnow()
 
-    fixtures = self.get_team_recent_fixtures(int(team_id), last=max(25,last*3), timezone=timezone, use_cache=True)
+    fixtures = self.get_team_recent_fixtures(
+        int(team_id), last=max(25, last * 3), timezone=timezone, use_cache=True
+    )
 
-    games=[]
+    games = []
     for f in fixtures:
         try:
-            dt = datetime.fromisoformat(str(f.get("utcDate")).replace("Z","+00:00"))
+            dt = datetime.fromisoformat(str(f.get("utcDate")).replace("Z", "+00:00"))
         except Exception:
             continue
         if dt >= match_dt:
@@ -781,40 +882,39 @@ def compute_travel_metrics(self, team_id: int, match_utc_iso: str, last: int = 1
         if h_id is None or a_id is None:
             continue
 
-        if int(h_id)==int(team_id):
-            venue="home"
-        elif int(a_id)==int(team_id):
-            venue="away"
+        if int(h_id) == int(team_id):
+            venue = "home"
+        elif int(a_id) == int(team_id):
+            venue = "away"
         else:
             continue
 
-        games.append({"dt":dt,"venue":venue})
+        games.append({"dt": dt, "venue": venue})
 
-    games = sorted(games,key=lambda x:x["dt"], reverse=True)[:int(last)]
+    games = sorted(games, key=lambda x: x["dt"], reverse=True)[: int(last)]
     if not games:
-        return {"team_id":int(team_id),"n":0}
+        return {"team_id": int(team_id), "n": 0}
 
     def streak(kind):
-        s=0
+        s = 0
         for g in games:
-            if g["venue"]==kind:
-                s+=1
+            if g["venue"] == kind:
+                s += 1
             else:
                 break
         return s
 
-    away_count=sum(1 for g in games if g["venue"]=="away")
-    switches=0
-    for i in range(1,len(games)):
-        if games[i]["venue"]!=games[i-1]["venue"]:
-            switches+=1
+    away_count = sum(1 for g in games if g["venue"] == "away")
+    switches = 0
+    for i in range(1, len(games)):
+        if games[i]["venue"] != games[i - 1]["venue"]:
+            switches += 1
 
     return {
-        "team_id":int(team_id),
-        "n":len(games),
-        "away_streak":streak("away"),
-        "home_streak":streak("home"),
-        "away_ratio_lastN":round(away_count/len(games),3),
-        "venue_switches":int(switches),
+        "team_id": int(team_id),
+        "n": len(games),
+        "away_streak": streak("away"),
+        "home_streak": streak("home"),
+        "away_ratio_lastN": round(away_count / len(games), 3),
+        "venue_switches": int(switches),
     }
-

@@ -13,10 +13,10 @@ from __future__ import annotations
 
 # ── Пример: режим "строже/стабильнее" ───────────────────────────────
 # Чем выше MIN_CONFIDENCE, тем реже приложение будет давать "жирные" рекомендации.
-USER_MIN_CONFIDENCE: int | None = None   # например 55
+USER_MIN_CONFIDENCE: int | None = None  # например 55
 
 # Сколько последних матчей учитывать в форме команд
-USER_FORM_MATCHES: int | None = None     # например 6
+USER_FORM_MATCHES: int | None = None  # например 6
 
 # Веса факторов (сумма желательно 1.0). Если None — используется дефолт.
 USER_WEIGHTS: dict[str, float] | None = None
@@ -34,7 +34,7 @@ USER_WEIGHTS: dict[str, float] | None = None
 
 # Насколько доверять "внешним" источникам, если они доступны.
 # 1.0 = как сейчас, 0.0 = полностью игнорировать (но данные всё равно собираются).
-USER_EXTERNAL_SIGNALS_STRENGTH: float | None = None   # например 0.7
+USER_EXTERNAL_SIGNALS_STRENGTH: float | None = None  # например 0.7
 
 
 def apply_user_overrides(Config):  # noqa: N802 (это намеренно)
