@@ -35,9 +35,7 @@ class XGCollector(BaseCollector):
         league: str = "EPL",
         season: Optional[int] = None,
     ) -> Dict:
-        cache_key = (
-            f"xg_{team_name.lower().replace(' ', '_')}_{league}_{season or 'cur'}"
-        )
+        cache_key = f"xg_{team_name.lower().replace(' ','_')}_{league}_{season or 'cur'}"
         cached = self._cache_get(cache_key, max_age_hours=12.0)
         if cached:
             return cached
@@ -51,9 +49,7 @@ class XGCollector(BaseCollector):
         self._cache_set(cache_key, result)
         return result
 
-    def _fetch_understat_team(
-        self, team_name: str, league: str, season: int
-    ) -> List[Dict]:
+    def _fetch_understat_team(self, team_name: str, league: str, season: int) -> List[Dict]:
         league = self.LEAGUES.get(league, league)
         url = f"https://understat.com/league/{league}/{season}"
         resp = self.get(url, host_key="understat.com")

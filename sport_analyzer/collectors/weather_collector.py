@@ -9,39 +9,37 @@ logger = logging.getLogger(__name__)
 
 
 class WeatherCollector(BaseCollector):
+
     RATE_LIMIT_PER_MINUTE = 60
+
 
     def __init__(self, db_path: str = "sport_analyzer.db"):
         super().__init__(db_path=db_path)
 
+
     STADIUMS = {
-        "Old Trafford": {"lat": 53.4631, "lon": -2.2913},
-        "Anfield": {"lat": 53.4308, "lon": -2.9608},
-        "Emirates Stadium": {"lat": 51.5549, "lon": -0.1084},
+        "Old Trafford":      {"lat": 53.4631, "lon": -2.2913},
+        "Anfield":           {"lat": 53.4308, "lon": -2.9608},
+        "Emirates Stadium":  {"lat": 51.5549, "lon": -0.1084},
         "Santiago Bernabeu": {"lat": 40.4530, "lon": -3.6883},
-        "Camp Nou": {"lat": 41.3809, "lon": 2.1228},
-        "Allianz Arena": {"lat": 48.2188, "lon": 11.6248},
-        "San Siro": {"lat": 45.4781, "lon": 9.1240},
-        "Wembley": {"lat": 51.5560, "lon": -0.2796},
+        "Camp Nou":          {"lat": 41.3809, "lon":  2.1228},
+        "Allianz Arena":     {"lat": 48.2188, "lon": 11.6248},
+        "San Siro":          {"lat": 45.4781, "lon":  9.1240},
+        "Wembley":           {"lat": 51.5560, "lon": -0.2796},
     }
 
     HOURLY_PARAMS = [
-        "temperature_2m",
-        "precipitation",
-        "wind_speed_10m",
-        "wind_gusts_10m",
-        "cloudcover",
-        "visibility",
-        "weathercode",
+        "temperature_2m", "precipitation", "wind_speed_10m",
+        "wind_gusts_10m", "cloudcover", "visibility", "weathercode",
     ]
 
     def get_weather_for_match(
         self,
-        city: Optional[str] = None,
-        stadium: Optional[str] = None,
-        match_datetime: Optional[str] = None,
-        lat: Optional[float] = None,
-        lon: Optional[float] = None,
+        city:           Optional[str]   = None,
+        stadium:        Optional[str]   = None,
+        match_datetime: Optional[str]   = None,
+        lat:            Optional[float] = None,
+        lon:            Optional[float] = None,
     ) -> WeatherData:
         coords = self._resolve_coords(city, stadium, lat, lon)
         if not coords:
@@ -85,10 +83,10 @@ class WeatherCollector(BaseCollector):
         resp = self.get(
             "https://api.open-meteo.com/v1/forecast",
             params={
-                "latitude": lat,
+                "latitude":  lat,
                 "longitude": lon,
-                "current": self.HOURLY_PARAMS,
-                "timezone": "auto",
+                "current":   self.HOURLY_PARAMS,
+                "timezone":  "auto",
             },
         )
         if resp is None or resp.status_code != 200:
@@ -99,21 +97,21 @@ class WeatherCollector(BaseCollector):
         resp = self.get(
             "https://api.open-meteo.com/v1/forecast",
             params={
-                "latitude": lat,
-                "longitude": lon,
-                "hourly": self.HOURLY_PARAMS,
+                "latitude":      lat,
+                "longitude":     lon,
+                "hourly":        self.HOURLY_PARAMS,
                 "forecast_days": 14,
-                "timezone": "auto",
+                "timezone":      "auto",
             },
         )
         if resp is None or resp.status_code != 200:
             return WeatherData()
 
         hourly = resp.json().get("hourly", {})
-        times = hourly.get("time", [])
+        times  = hourly.get("time", [])
 
         try:
-            match_dt = datetime.fromisoformat(match_datetime.replace("Z", ""))
+            match_dt  = datetime.fromisoformat(match_datetime.replace("Z", ""))
             match_str = match_dt.strftime("%Y-%m-%dT%H:00")
         except ValueError:
             match_str = ""

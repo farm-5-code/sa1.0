@@ -26,7 +26,6 @@ def job_update_elo():
     try:
         from sport_analyzer.config.settings import Config
         from scripts.update_elo import ELOUpdater
-
         n = ELOUpdater(Config()).run(days_back=2)
         logger.info(f"✔ ELO: {n} матчей")
     except Exception as e:
@@ -37,7 +36,6 @@ def job_clean_cache():
     logger.info(f"[{_utc_now()}] ▶ Cache clean")
     try:
         from sport_analyzer.config.settings import Config
-
         cfg = Config()
         threshold = time.time() - 24 * 3600
         with sqlite3.connect(cfg.DB_PATH, timeout=10) as c:

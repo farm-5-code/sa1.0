@@ -322,9 +322,7 @@ class MatchPredictor:
 
         from sklearn.ensemble import GradientBoostingClassifier
 
-        logger.info(
-            "Using GradientBoostingClassifier (install lightgbm for best results)"
-        )
+        logger.info("Using GradientBoostingClassifier (install lightgbm for best results)")
         return GradientBoostingClassifier(
             n_estimators=200,
             learning_rate=0.05,
@@ -339,9 +337,7 @@ class MatchPredictor:
         if not hasattr(model, "feature_importances_"):
             return None
         return (
-            pd.DataFrame(
-                {"feature": FEATURE_NAMES, "importance": model.feature_importances_}
-            )
+            pd.DataFrame({"feature": FEATURE_NAMES, "importance": model.feature_importances_})
             .sort_values("importance", ascending=False)
             .reset_index(drop=True)
         )

@@ -13,6 +13,7 @@ _CONNECT_TIMEOUT = 10
 
 
 class SportsCollector(BaseCollector):
+
     RATE_LIMIT_PER_MINUTE = 9
 
     def __init__(self, config, db_path: str = "sport_analyzer.db"):
@@ -24,7 +25,7 @@ class SportsCollector(BaseCollector):
 
     def get_matches(self, days_ahead: int = 7) -> List[Dict]:
         date_from = datetime.utcnow().strftime("%Y-%m-%d")
-        date_to = (datetime.utcnow() + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+        date_to   = (datetime.utcnow() + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
 
         resp = self.get(
             "https://api.football-data.org/v4/matches",
@@ -35,14 +36,14 @@ class SportsCollector(BaseCollector):
 
         return [
             {
-                "id": m.get("id"),
-                "date": m.get("utcDate"),
-                "competition": m.get("competition", {}).get("name"),
-                "home_team": m.get("homeTeam", {}).get("name"),
-                "away_team": m.get("awayTeam", {}).get("name"),
+                "id":           m.get("id"),
+                "date":         m.get("utcDate"),
+                "competition":  m.get("competition", {}).get("name"),
+                "home_team":    m.get("homeTeam", {}).get("name"),
+                "away_team":    m.get("awayTeam", {}).get("name"),
                 "home_team_id": m.get("homeTeam", {}).get("id"),
                 "away_team_id": m.get("awayTeam", {}).get("id"),
-                "stadium": m.get("venue"),
+                "stadium":      m.get("venue"),
             }
             for m in resp.json().get("matches", [])
         ]
@@ -54,13 +55,10 @@ class SportsCollector(BaseCollector):
         if use_cache:
             cached = self._cache_get(cache_key, max_age_hours=3.0)
             if cached:
-                return TeamStats(
-                    **{
-                        k: v
-                        for k, v in cached.items()
-                        if k in TeamStats.__dataclass_fields__
-                    }
-                )
+                return TeamStats(**{
+                    k: v for k, v in cached.items()
+                    if k in TeamStats.__dataclass_fields__
+                })
 
         resp = self.get(
             f"https://api.football-data.org/v4/teams/{team_id}/matches",
@@ -87,27 +85,19 @@ class SportsCollector(BaseCollector):
 
             gs += my
             gc += opp
-            if my > opp:
-                wins += 1
-                form.append("W")
-            elif my == opp:
-                draws += 1
-                form.append("D")
-            else:
-                losses += 1
-                form.append("L")
+            if   my > opp:  wins   += 1; form.append("W")
+            elif my == opp: draws  += 1; form.append("D")
+            else:           losses += 1; form.append("L")
 
         total = wins + draws + losses or 1
         return TeamStats(
-            team_id=team_id,
-            form=form[-5:],
-            form_score=self._form_score(form[-5:]),
-            win_rate=round(wins / total * 100, 1),
-            avg_goals_scored=round(gs / total, 2),
-            avg_goals_conceded=round(gc / total, 2),
-            wins=wins,
-            draws=draws,
-            losses=losses,
+            team_id            = team_id,
+            form               = form[-5:],
+            form_score         = self._form_score(form[-5:]),
+            win_rate           = round(wins / total * 100, 1),
+            avg_goals_scored   = round(gs / total, 2),
+            avg_goals_conceded = round(gc / total, 2),
+            wins=wins, draws=draws, losses=losses,
         )
 
     @staticmethod
@@ -141,10 +131,10 @@ class SportsCollector(BaseCollector):
 
         t = teams[0]
         info = {
-            "name": t.get("strTeam"),
-            "stadium": t.get("strStadium"),
+            "name":             t.get("strTeam"),
+            "stadium":          t.get("strStadium"),
             "stadium_location": t.get("strStadiumLocation"),
-            "country": t.get("strCountry"),
+            "country":          t.get("strCountry"),
         }
         self._cache_set(cache_key, info)
         return info
@@ -153,8 +143,8 @@ class SportsCollector(BaseCollector):
 
     def get_head_to_head(self, home_name: str, away_name: str) -> List[Dict]:
         cache_key = (
-            f"h2h_{home_name.lower().replace(' ', '_')}"
-            f"_{away_name.lower().replace(' ', '_')}"
+            f"h2h_{home_name.lower().replace(' ','_')}"
+            f"_{away_name.lower().replace(' ','_')}"
         )
         cached = self._cache_get(cache_key, max_age_hours=24)
         if cached:
@@ -172,15 +162,13 @@ class SportsCollector(BaseCollector):
                 h = (ev.get("strHomeTeam") or "").lower()
                 a = (ev.get("strAwayTeam") or "").lower()
                 if (hn_l in h or hn_l in a) and (an_l in h or an_l in a):
-                    events.append(
-                        {
-                            "date": ev.get("dateEvent"),
-                            "home_team": ev.get("strHomeTeam"),
-                            "away_team": ev.get("strAwayTeam"),
-                            "home_score": ev.get("intHomeScore"),
-                            "away_score": ev.get("intAwayScore"),
-                        }
-                    )
+                    events.append({
+                        "date":       ev.get("dateEvent"),
+                        "home_team":  ev.get("strHomeTeam"),
+                        "away_team":  ev.get("strAwayTeam"),
+                        "home_score": ev.get("intHomeScore"),
+                        "away_score": ev.get("intAwayScore"),
+                    })
 
         self._cache_set(cache_key, events[:10])
         return events[:10]
@@ -188,43 +176,33 @@ class SportsCollector(BaseCollector):
     def get_h2h_stats(self, home_name: str, away_name: str) -> Dict:
         events = self.get_head_to_head(home_name, away_name)
         if not events:
-            return {
-                "matches": 0,
-                "home_wins": 0,
-                "away_wins": 0,
-                "draws": 0,
-                "home_win_pct": 33.3,
-                "draw_pct": 33.3,
-                "away_win_pct": 33.3,
-            }
+            return {"matches": 0, "home_wins": 0, "away_wins": 0, "draws": 0,
+                    "home_win_pct": 33.3, "draw_pct": 33.3, "away_win_pct": 33.3}
 
         home_wins = away_wins = draws = 0
         hn_l = home_name.lower()
 
         for ev in events:
             try:
-                hs = int(ev.get("home_score") or 0)
+                hs  = int(ev.get("home_score") or 0)
                 as_ = int(ev.get("away_score") or 0)
             except (TypeError, ValueError):
                 continue
             is_our_home = hn_l in (ev.get("home_team") or "").lower()
-            my = hs if is_our_home else as_
+            my  = hs if is_our_home else as_
             opp = as_ if is_our_home else hs
-            if my > opp:
-                home_wins += 1
-            elif my < opp:
-                away_wins += 1
-            else:
-                draws += 1
+            if   my > opp: home_wins += 1
+            elif my < opp: away_wins += 1
+            else:          draws     += 1
 
         total = home_wins + away_wins + draws or 1
         return {
-            "matches": total,
-            "home_wins": home_wins,
-            "away_wins": away_wins,
-            "draws": draws,
+            "matches":      total,
+            "home_wins":    home_wins,
+            "away_wins":    away_wins,
+            "draws":        draws,
             "home_win_pct": round(home_wins / total * 100, 1),
-            "draw_pct": round(draws / total * 100, 1),
+            "draw_pct":     round(draws     / total * 100, 1),
             "away_win_pct": round(away_wins / total * 100, 1),
         }
 
@@ -242,12 +220,12 @@ class SportsCollector(BaseCollector):
             return []
         return [
             {
-                "position": i + 1,
-                "team": item.get("teamName"),
-                "points": item.get("points"),
-                "won": item.get("won"),
-                "lost": item.get("lost"),
-                "draw": item.get("draw"),
+                "position":  i + 1,
+                "team":      item.get("teamName"),
+                "points":    item.get("points"),
+                "won":       item.get("won"),
+                "lost":      item.get("lost"),
+                "draw":      item.get("draw"),
                 "goal_diff": item.get("goalDiff"),
             }
             for i, item in enumerate(resp.json())
@@ -259,31 +237,32 @@ class SportsCollector(BaseCollector):
         name = normalize_team_name(team_name)
         self._ensure_elo_table()
         with sqlite3.connect(self.db_path, timeout=_CONNECT_TIMEOUT) as c:
-            row = c.execute("SELECT elo FROM team_elo WHERE name=?", (name,)).fetchone()
+            row = c.execute(
+                "SELECT elo FROM team_elo WHERE name=?", (name,)
+            ).fetchone()
         return row[0] if row else 1500.0
 
     def update_elo(
         self,
-        home: str,
-        away: str,
+        home:       str,
+        away:       str,
         home_goals: int,
         away_goals: int,
-        league: str = "",
+        league:     str = "",
     ) -> None:
-        home = normalize_team_name(home)
-        away = normalize_team_name(away)
+        home   = normalize_team_name(home)
+        away   = normalize_team_name(away)
         league = (league or "").strip()
 
-        K = 32
+        K        = 32
         HOME_ADV = 100
 
         elo_h = self.get_elo(home)
         elo_a = self.get_elo(away)
 
-        exp_h = 1 / (1 + 10 ** ((elo_a - elo_h - HOME_ADV) / 400))
-        actual_h = (
-            1.0 if home_goals > away_goals else 0.5 if home_goals == away_goals else 0.0
-        )
+        exp_h    = 1 / (1 + 10 ** ((elo_a - elo_h - HOME_ADV) / 400))
+        actual_h = (1.0 if home_goals > away_goals else
+                    0.5 if home_goals == away_goals else 0.0)
 
         new_elo_h = round(elo_h + K * (actual_h - exp_h), 1)
         new_elo_a = round(elo_a + K * ((1 - actual_h) - (1 - exp_h)), 1)
@@ -291,8 +270,7 @@ class SportsCollector(BaseCollector):
         self._ensure_elo_table()
         with sqlite3.connect(self.db_path, timeout=_CONNECT_TIMEOUT) as c:
             for name, elo in ((home, new_elo_h), (away, new_elo_a)):
-                c.execute(
-                    """
+                c.execute("""
                     INSERT INTO team_elo (name, league, elo) VALUES (?,?,?)
                     ON CONFLICT(name) DO UPDATE SET
                         elo = excluded.elo,
@@ -300,9 +278,7 @@ class SportsCollector(BaseCollector):
                             WHEN excluded.league != '' THEN excluded.league
                             ELSE team_elo.league
                         END
-                """,
-                    (name, league, elo),
-                )
+                """, (name, league, elo))
 
     def _ensure_elo_table(self):
         with sqlite3.connect(self.db_path, timeout=_CONNECT_TIMEOUT) as c:

@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class MatchAnalyzer:
+
     def __init__(self, config, sports, weather, news, xg_collector=None):
         self.config = config
         self.sports = sports
@@ -40,6 +41,7 @@ class MatchAnalyzer:
         neutral_field: bool = False,
         competition: str = "",
     ) -> Dict:
+
         logger.info(f"Анализ: {home_team} vs {away_team}")
 
         availability = {
@@ -77,19 +79,13 @@ class MatchAnalyzer:
 
         weather_data = safe(
             "weather",
-            lambda: self.weather.get_weather_for_match(
-                city=city, stadium=stadium, match_datetime=match_datetime
-            ),
+            lambda: self.weather.get_weather_for_match(city=city, stadium=stadium, match_datetime=match_datetime),
             WeatherData(),
         )
 
         # ── News + H2H
-        home_news = safe(
-            "news_home", lambda: self._build_news_insight(home_team), NewsInsight()
-        )
-        away_news = safe(
-            "news_away", lambda: self._build_news_insight(away_team), NewsInsight()
-        )
+        home_news = safe("news_home", lambda: self._build_news_insight(home_team), NewsInsight())
+        away_news = safe("news_away", lambda: self._build_news_insight(away_team), NewsInsight())
         h2h = safe("h2h", lambda: self.sports.get_h2h_stats(home_team, away_team), {})
 
         # ── xG
@@ -97,12 +93,8 @@ class MatchAnalyzer:
         xg_away = safe("xg", lambda: self._get_xg(away_team), 0.0)
 
         # ── Fatigue
-        fatigue_home = safe(
-            "fatigue", lambda: self._get_fatigue(home_team_id, match_datetime), 0.0
-        )
-        fatigue_away = safe(
-            "fatigue", lambda: self._get_fatigue(away_team_id, match_datetime), 0.0
-        )
+        fatigue_home = safe("fatigue", lambda: self._get_fatigue(home_team_id, match_datetime), 0.0)
+        fatigue_away = safe("fatigue", lambda: self._get_fatigue(away_team_id, match_datetime), 0.0)
 
         # ── Match importance
         importance = get_match_importance(competition)
@@ -116,15 +108,11 @@ class MatchAnalyzer:
         away_stats = self._apply_news_factors(away_stats, away_news)
 
         # ── Взвешенное влияние травм/дисквалификаций (по игрокам, если распознаны)
-        ih = injury_factors(
-            home_team, home_news.injury_players, home_news.suspended_players
-        )
-        ia = injury_factors(
-            away_team, away_news.injury_players, away_news.suspended_players
-        )
-        home_stats.avg_goals_scored *= ih["attack"]
+        ih = injury_factors(home_team, home_news.injury_players, home_news.suspended_players)
+        ia = injury_factors(away_team, away_news.injury_players, away_news.suspended_players)
+        home_stats.avg_goals_scored   *= ih["attack"]
         home_stats.avg_goals_conceded *= ih["defense"]
-        away_stats.avg_goals_scored *= ia["attack"]
+        away_stats.avg_goals_scored   *= ia["attack"]
         away_stats.avg_goals_conceded *= ia["defense"]
 
         # ── Apply fatigue factors
@@ -134,9 +122,7 @@ class MatchAnalyzer:
         away_stats.avg_goals_conceded *= fatigue_to_concede_factor(fatigue_away)
 
         # ── Base Poisson
-        poisson = calculate_poisson(
-            home_stats, away_stats, weather_data, h2h, neutral_field
-        )
+        poisson = calculate_poisson(home_stats, away_stats, weather_data, h2h, neutral_field)
 
         # ── Dixon–Coles correction on outcome/totals
         dc_matrix = build_dc_matrix(poisson.lambda_h, poisson.lambda_a, rho=-0.13)
@@ -168,9 +154,7 @@ class MatchAnalyzer:
         notes = []
         for k, v in availability.items():
             if not v.get("ok"):
-                notes.append(
-                    f"Источник '{k}' недоступен — использован безопасный дефолт."
-                )
+                notes.append(f"Источник '{k}' недоступен — использован безопасный дефолт.")
 
         return {
             "match": f"{home_team} vs {away_team}",
@@ -236,17 +220,9 @@ class MatchAnalyzer:
                 return self.xg.get_team_xg(team_name)
             except Exception as e:
                 logger.debug(f"xG error for {team_name}: {e}")
-        return {
-            "xg_for": 1.35,
-            "xg_against": 1.35,
-            "xg_diff": 0.0,
-            "matches": 0,
-            "source": "default",
-        }
+        return {"xg_for": 1.35, "xg_against": 1.35, "xg_diff": 0.0, "matches": 0, "source": "default"}
 
-    def _get_recent_matches(
-        self, team_id: Optional[int], limit: int = 10
-    ) -> List[Dict]:
+    def _get_recent_matches(self, team_id: Optional[int], limit: int = 10) -> List[Dict]:
         """Возвращает последние FINISHED матчи команды для расчёта усталости/формы."""
         if not team_id:
             return []
@@ -261,11 +237,12 @@ class MatchAnalyzer:
             out: List[Dict] = []
             for m in resp.json().get("matches", []):
                 home_id = m.get("homeTeam", {}).get("id")
+                away_id = m.get("awayTeam", {}).get("id")
                 is_home = home_id == team_id
                 opp = (
                     m.get("awayTeam", {}).get("name")
-                    if is_home
-                    else m.get("homeTeam", {}).get("name")
+                    if is_home else
+                    m.get("homeTeam", {}).get("name")
                 )
 
                 score = (m.get("score", {}) or {}).get("fullTime", {}) or {}
@@ -275,45 +252,34 @@ class MatchAnalyzer:
                 their = ag if is_home else hg
                 result = "W" if my > their else "D" if my == their else "L"
 
-                out.append(
-                    {
-                        "date": (m.get("utcDate") or "")[:10],
-                        "is_home": is_home,
-                        "opponent_name": opp or "",
-                        "result": result,
-                    }
-                )
+                out.append({
+                    "date": (m.get("utcDate") or "")[:10],
+                    "is_home": is_home,
+                    "opponent_name": opp or "",
+                    "result": result,
+                })
             return out
         except Exception as e:
             logger.debug(f"Recent matches fetch error: {e}")
             return []
 
-    def _get_fatigue(
-        self, team_id: Optional[int], match_datetime: Optional[str]
-    ) -> float:
+    def _get_fatigue(self, team_id: Optional[int], match_datetime: Optional[str]) -> float:
         recent = self._get_recent_matches(team_id, limit=12)
         if not recent:
             return 0.0
         return calculate_fatigue(
-            [
-                {"date": m["date"], "is_away": not m.get("is_home", False)}
-                for m in recent
-            ],
+            [{"date": m["date"], "is_away": not m.get("is_home", False)} for m in recent],
             match_datetime,
         )
 
-    def _apply_weighted_form(
-        self, stats: TeamStats, team_id: Optional[int]
-    ) -> TeamStats:
+    def _apply_weighted_form(self, stats: TeamStats, team_id: Optional[int]) -> TeamStats:
         """Обновляет stats.form_score, учитывая силу соперников."""
         recent = self._get_recent_matches(team_id, limit=12)
         if not recent:
             return stats
         try:
             w_form = calculate_weighted_form(recent, self.sports.get_elo, max_matches=8)
-            stats.form_score = round(
-                0.6 * w_form + 0.4 * float(stats.form_score or 50.0), 1
-            )
+            stats.form_score = round(0.6 * w_form + 0.4 * float(stats.form_score or 50.0), 1)
         except Exception as e:
             logger.debug(f"Weighted form error: {e}")
         return stats
@@ -323,14 +289,8 @@ class MatchAnalyzer:
         # Blend 60% xG + 40% actual goals when enough matches.
         if xg.get("matches", 0) >= 5:
             blend = 0.6
-            stats.avg_goals_scored = (
-                blend * float(xg.get("xg_for", 1.35))
-                + (1 - blend) * stats.avg_goals_scored
-            )
-            stats.avg_goals_conceded = (
-                blend * float(xg.get("xg_against", 1.35))
-                + (1 - blend) * stats.avg_goals_conceded
-            )
+            stats.avg_goals_scored = blend * float(xg.get("xg_for", 1.35)) + (1 - blend) * stats.avg_goals_scored
+            stats.avg_goals_conceded = blend * float(xg.get("xg_against", 1.35)) + (1 - blend) * stats.avg_goals_conceded
         return stats
 
     @staticmethod
@@ -410,17 +370,17 @@ class MatchAnalyzer:
         best_key = max(outcomes, key=lambda k: outcomes[k][0])
         best_prob, label = outcomes[best_key]
         src = final_probs.get("source", "poisson")
-        recs.append(f"🎯 {label} — {best_prob * 100:.1f}% [{src}]")
+        recs.append(f"🎯 {label} — {best_prob*100:.1f}% [{src}]")
 
         if poisson.over_2_5 > 0.60:
-            recs.append(f"⚽ Тотал Б 2.5 — {poisson.over_2_5 * 100:.1f}%")
+            recs.append(f"⚽ Тотал Б 2.5 — {poisson.over_2_5*100:.1f}%")
         elif poisson.over_2_5 < 0.40:
-            recs.append(f"🔒 Тотал М 2.5 — {(1 - poisson.over_2_5) * 100:.1f}%")
+            recs.append(f"🔒 Тотал М 2.5 — {(1-poisson.over_2_5)*100:.1f}%")
 
         if poisson.both_score > 0.60:
-            recs.append(f"✅ Обе забьют — {poisson.both_score * 100:.1f}%")
+            recs.append(f"✅ Обе забьют — {poisson.both_score*100:.1f}%")
         elif poisson.both_score < 0.35:
-            recs.append(f"❌ Обе не забьют — {(1 - poisson.both_score) * 100:.1f}%")
+            recs.append(f"❌ Обе не забьют — {(1-poisson.both_score)*100:.1f}%")
 
         # xG insight
         if xg_home.get("matches", 0) >= 5 and xg_away.get("matches", 0) >= 5:
